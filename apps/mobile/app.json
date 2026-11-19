@@ -1,0 +1,1 @@
+{"expo":{"name":"EduShare","slug":"edushare","scheme":"edushare","plugins":["expo-router","expo-image-picker"],"android":{"package":"vn.edushare.student"},"web":{"bundler":"metro"}}}
