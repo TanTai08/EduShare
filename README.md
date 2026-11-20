@@ -101,6 +101,27 @@ npm test
 
 `npm run check` kiểm tra kiểu TypeScript cho các workspace. `npm test` khởi động Express trên cổng tạm để kiểm tra danh mục trường, trạng thái API và phản hồi khi thiếu MongoDB.
 
+## Danh mục trường và ngành học
+
+API tự nạp danh mục có sẵn của Đà Nẵng vào MongoDB khi khởi động. Bộ dữ liệu được đọc từ nguồn tuyển sinh và trang chương trình đào tạo của các trường. Các mã trường từng dùng cho tài khoản hiện có được giữ nguyên. Hồ sơ sinh viên chọn khu vực, trường hoặc cơ sở, ngành học rồi đến chuyên ngành nếu có. Danh mục Huế vẫn gồm các trường EduShare đã hỗ trợ. Sinh viên có thể bổ sung ngành khi danh mục trường được cập nhật.
+
+Để đọc nguồn mới và xem số mục tìm được, chạy ở thư mục gốc.
+
+```sh
+npm run catalog:sync
+```
+
+Chọn từng nguồn hoặc xuất JSON để xem trước khi cập nhật.
+
+```sh
+npm run catalog:sync -- --source donga --source vku --output catalog-preview.json
+npm run catalog:sync -- --source donga --source vku --apply
+```
+
+Đặt `MONGODB_URI` trong `apps/api/.env` như khi chạy API. Sau khi nhập, khởi động lại API để tải các mục mới. Nguồn và quy tắc đọc nằm trong `apps/api/src/modules/academic/sources.ts`. Tệp xuất có đường dẫn nguồn cho từng mục. Khi một nguồn gặp lỗi, script báo tên nguồn, vẫn nhập những nguồn đọc được nếu dùng `--apply`, và giữ dữ liệu đã có. Có thể dùng `npm run catalog:sync -- --bundled --apply` để nhập bộ dữ liệu đi kèm.
+
+Danh mục hiện phủ các cơ sở đã xác minh được dữ liệu. Một số nguồn chỉ công bố các ngành thuộc một chương trình hoặc có cấu trúc riêng. Có thể bổ sung nguồn cho các trường và chương trình còn thiếu mà không phải nhập tay từng dòng.
+
 ## Tạo dữ liệu mẫu trên MongoDB
 
 Đặt `DEMO_PASSWORD` từ 8 ký tự trong `apps/api/.env` cùng với `MONGODB_URI`. Từ thư mục gốc chạy:

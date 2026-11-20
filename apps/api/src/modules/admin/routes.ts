@@ -6,7 +6,7 @@ import { models } from '../../models.js';
 import { requireAdmin } from '../../middlewares/auth.js';
 import { fail } from '../../middlewares/errors.js';
 import { objectId, schoolId } from '../../validation.js';
-import { schools } from '../academic/catalog.js';
+import { findSchool } from '../academic/catalog.js';
 import { hashToken } from '../auth/session.js';
 import { credentials } from '../auth/validation.js';
 import { serializeDoc } from '../documents/service.js';
@@ -318,7 +318,7 @@ export function createAdminRouter() {
     });
     res.json({ from, to, members: stat(members), posts: stat(posts), opens: stat(opens), resolved: stat(resolved), timeline,
       categories: categories.map(row => ({ name: row._id, count: row.count })),
-      schools: bySchool.map(row => ({ name: schools.find(school => school.id === row._id)?.name || 'Trường chưa xác định', members: row.members, posts: row.posts })),
+      schools: bySchool.map(row => ({ name: findSchool(row._id)?.name || 'Trường chưa xác định', members: row.members, posts: row.posts })),
       averageHours: metrics[0]?.hours ?? null, firstApproval: approvedCount ? Math.max(0, approvedCount - approvedAfterRevision) / approvedCount : null,
     });
   });

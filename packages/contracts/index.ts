@@ -5,10 +5,21 @@ export const schools = [
   { id: 'hueedu', name: 'ĐH Sư phạm, Đại học Huế', region: 'Huế' },
 ] as const;
 
+export const academicRegions = [
+  { id: 'da-nang', name: 'Đà Nẵng' },
+  { id: 'hue', name: 'Huế' },
+] as const;
+export type AcademicRegion = typeof academicRegions[number];
+export type AcademicSchool = { id: string; name: string; region: string };
+export type AcademicMajor = {
+  id: string; code?: string; name: string; specializations: { id: string; name: string }[];
+};
+export type EducationSelection = { schoolId: string; majorId?: string; specializationId?: string };
+
 export type ListingType = 'digital' | 'sale' | 'points';
 export type DealStatus = 'requested' | 'scheduled' | 'waiting' | 'completed' | 'cancelled';
 export type PublicUser = { id: string; name: string; school: string; region: string; avatar?: string };
-export type SessionUser = PublicUser & { points: number; saved: string[]; role: 'student' | 'admin' };
+export type SessionUser = PublicUser & { points: number; saved: string[]; role: 'student' | 'admin'; schoolId?: string; majorId?: string; major?: string; specializationId?: string; specialization?: string };
 export type Listing = {
   id: string; title: string; subject: string; category: string; description: string;
   type: ListingType; price: number; cover?: string; fileUrl?: string; fileName?: string; owner: PublicUser;

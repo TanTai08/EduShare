@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { models } from '../models.js';
+import { loadCatalog } from '../modules/academic/catalog.js';
 
 let configured = false;
 let indexesReady = false;
@@ -15,5 +16,6 @@ export async function connectDatabase(uri: string | undefined) {
   if (!uri) return;
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 6000 });
   await Promise.all(Object.values(models).map(model => model.init()));
+  await loadCatalog();
   indexesReady = true;
 }

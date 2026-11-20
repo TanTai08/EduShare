@@ -2,7 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 
 export const models = {
   users: mongoose.model('User', new Schema({
-    name: String, email: { type: String, unique: true }, password: String, schoolId: String,
+    name: String, email: { type: String, unique: true }, password: String, schoolId: String, majorId: String, specializationId: String,
     avatar: String, points: { type: Number, default: 0 }, role: { type: String, default: 'student' },
     saved: [String], status: { type: String, default: 'active' }, dealVersion: Number,
   }, { timestamps: true })),

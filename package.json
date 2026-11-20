@@ -11,6 +11,7 @@
     "web": "npm run web -w @edushare/mobile",
     "check": "npm run check --workspaces --if-present",
     "seed:demo": "npm run seed:demo -w @edushare/api",
-    "test": "npm run test -w @edushare/api"
+    "test": "npm run test -w @edushare/api",
+    "catalog:sync": "npm run catalog:sync -w @edushare/api --"
   }
 }

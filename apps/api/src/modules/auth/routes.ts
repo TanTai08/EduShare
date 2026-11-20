@@ -3,17 +3,19 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { models } from '../../models.js';
 import { auth } from '../../middlewares/auth.js';
 import { fail } from '../../middlewares/errors.js';
-import { schoolId, text } from '../../validation.js';
+import { text } from '../../validation.js';
+import { educationFields, validateEducation } from '../academic/selection.js';
 import { credentials } from './validation.js';
 import { createSession, hashToken } from './session.js';
 
 const router = Router();
 
 router.post('/auth/register', async (req, res) => {
-  const input = credentials.extend({ name: text(90), schoolId }).parse(req.body);
+  const input = credentials.extend({ name: text(90), ...educationFields }).parse(req.body);
+  const education = validateEducation(input);
   const salt = randomBytes(16).toString('hex');
   const password = salt + ':' + scryptSync(input.password, salt, 64).toString('hex');
-  const user = await models.users.create({ ...input, password });
+  const user = await models.users.create({ name: input.name, email: input.email, ...education, password });
   res.status(201).json(await createSession(user));
 });
 router.post('/auth/login', async (req, res) => {

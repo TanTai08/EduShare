@@ -34,3 +34,11 @@ test('data endpoints return the existing unavailable response without MongoDB', 
     assert.deepEqual(await response.json(), { error: 'MongoDB chưa kết nối.' });
   }
 });
+
+test('school endpoints scope catalog queries by region and reject unknown schools', async () => {
+  const response = await fetch(baseUrl + '/schools?region=da-nang');
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), schools.filter(school => school.region === 'Đà Nẵng'));
+  assert.equal((await fetch(baseUrl + '/schools?region=invalid')).status, 400);
+  assert.equal((await fetch(baseUrl + '/schools/invalid/majors')).status, 404);
+});

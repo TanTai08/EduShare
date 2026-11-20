@@ -1,17 +1,16 @@
-import type { Dispatch, SetStateAction } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { schools } from '../../../../../../packages/contracts';
+import { EducationFields, type EducationDraft } from '../academic/EducationFields';
 import { palette } from '../../Workspace';
 import { styles } from '../../styles';
 
 export function AuthScreen({ page, desktop, open, leaveAuth, name, setName, email, setEmail, password, setPassword, confirmation, setConfirmation,
-  schoolsOpen, setSchoolsOpen, schoolId, setSchool, notice, busy, authenticate }: {
+  education, setEducation, notice, busy, authenticate }: {
   page: 'welcome' | 'login' | 'register'; desktop: boolean; open: (page: 'welcome' | 'login' | 'register' | 'home') => void; leaveAuth: () => void;
   name: string; setName: (value: string) => void; email: string; setEmail: (value: string) => void;
   password: string; setPassword: (value: string) => void; confirmation: string; setConfirmation: (value: string) => void;
-  schoolsOpen: boolean; setSchoolsOpen: Dispatch<SetStateAction<boolean>>; schoolId: string; setSchool: (value: string) => void;
+  education: EducationDraft; setEducation: (value: EducationDraft) => void;
   notice: string; busy: boolean; authenticate: () => void;
 }) {
   const welcome = page === 'welcome';
@@ -45,7 +44,7 @@ export function AuthScreen({ page, desktop, open, leaveAuth, name, setName, emai
           <View style={[authStyles.header, desktop && authStyles.webAuthHeader]}>
             <View style={authStyles.headerRow}>
               <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" hitSlop={12} onPress={leaveAuth}><Ionicons name="arrow-back" size={22} color="#151512" /></Pressable>
-              <Pressable accessibilityRole="button" onPress={() => { setSchoolsOpen(false); open(register ? 'login' : 'register'); }}><Text style={authStyles.link}>{register ? 'Đăng nhập' : 'Đăng ký'}</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => open(register ? 'login' : 'register')}><Text style={authStyles.link}>{register ? 'Đăng nhập' : 'Đăng ký'}</Text></Pressable>
             </View>
             <Text accessibilityRole={desktop ? 'header' : undefined} style={authStyles.title}>{title}</Text>
             <Text style={authStyles.description}>{register ? 'Tạo tài khoản để chia sẻ tài liệu học tập.' : 'Chào mừng bạn trở lại EduShare.'}</Text>
@@ -56,12 +55,7 @@ export function AuthScreen({ page, desktop, open, leaveAuth, name, setName, emai
             <AuthInput label="Mật khẩu" value={password} change={setPassword} secret />
             {register && <>
               <AuthInput label="Xác nhận mật khẩu" value={confirmation} change={setConfirmation} secret />
-              <Pressable accessibilityRole="button" accessibilityState={{ expanded: schoolsOpen }} style={authStyles.school} onPress={() => setSchoolsOpen(value => !value)}>
-                <Text style={authStyles.schoolText}>{schools.find(s => s.id === schoolId)?.name}</Text><Ionicons name={schoolsOpen ? 'chevron-up' : 'chevron-down'} size={16} />
-              </Pressable>
-              {schoolsOpen && schools.map(s => <Pressable key={s.id} accessibilityRole="button" accessibilityState={{ selected: s.id === schoolId }} style={authStyles.school} onPress={() => { setSchool(s.id); setSchoolsOpen(false); }}>
-                <Text style={authStyles.schoolText}>{s.name}</Text>{s.id === schoolId && <Ionicons name="checkmark" size={18} />}
-              </Pressable>)}
+              <EducationFields value={education} change={setEducation} />
             </>}
             {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
             <View style={authStyles.submit}><AuthButton caption={busy ? 'Đang xử lý…' : title} press={authenticate} disabled={busy} /></View>
@@ -106,8 +100,6 @@ const authStyles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 12, marginTop: 15 },
   form: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 31, borderTopRightRadius: 31, padding: 28, paddingTop: 33, gap: 12 },
   input: { minHeight: 49, borderRadius: 25, backgroundColor: '#f2f3f1', paddingHorizontal: 18, color: '#151512', fontSize: 14 },
-  school: { minHeight: 48, borderRadius: 20, backgroundColor: '#f2f3f1', paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  schoolText: { flex: 1, color: '#35352e', fontSize: 13 },
   submit: { flexDirection: 'row', marginTop: 15 },
   button: { flex: 1, minHeight: 49, borderRadius: 25, backgroundColor: '#151512', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   light: { backgroundColor: '#fff' },

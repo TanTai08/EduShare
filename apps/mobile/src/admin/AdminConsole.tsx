@@ -1,7 +1,7 @@
 import { useEffect,useRef,useState } from 'react';
 import { ActivityIndicator,BackHandler,Image,Linking,Modal,Platform,Pressable,ScrollView,Text,View,useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { schools } from '../../../../packages/contracts';
+import { schools as legacySchools, type AcademicSchool } from '../../../../packages/contracts';
 import { type AccountDetail,type Api,type Member,type Overview,type Page,type Post,type Report,type Stats,dateTime,labels,number,price } from './models';
 import { Action,Avatar,Choices,Empty,Field,Icon,Panel,Search,colors,s } from './ui';
 
@@ -16,7 +16,7 @@ import { UsersScreen,UserDetail } from './UsersScreen';
 import { ReportsScreen,ReportDetail } from './ReportsScreen';
 import { StatsScreen } from './StatsScreen';
 
-const memberBlank = { name: '', email: '', password: '', schoolId: schools[0].id as string };
+const memberBlank = { name: '', email: '', password: '', schoolId: legacySchools[0].id as string };
 const limit = 6;
 export default function AdminConsole({ api, endpoint, me, logout, logoutBusy, logoutError }: {
   api: Api; endpoint: string; me: { name: string; avatar?: string }; logout: () => void; logoutBusy: boolean; logoutError: string;
@@ -50,6 +50,13 @@ export default function AdminConsole({ api, endpoint, me, logout, logoutBusy, lo
   const inFlight = useRef(false);
   const [confirmation, setConfirmation] = useState<Confirm>();
   const [createOpen, setCreateOpen] = useState(false);
+  const [schools, setSchools] = useState<AcademicSchool[]>([...legacySchools]);
+  useEffect(() => {
+    if (!createOpen) return;
+    let active = true;
+    void api<AcademicSchool[]>('/schools').then(rows => { if (active) setSchools(rows); }).catch(() => {});
+    return () => { active = false; };
+  }, [api, createOpen]);
   const [member, setMember] = useState(memberBlank);
   const [photo, setPhoto] = useState('');
   const [pdfPreview, setPdfPreview] = useState<{ id: string; url: string }>();

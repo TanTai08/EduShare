@@ -7,12 +7,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { schools,type Listing,type ListingType,type PublicUser } from '../../../../packages/contracts';
+import { academicRegions,type Listing,type ListingType,type PublicUser } from '../../../../packages/contracts';
 import AdminConsole from '../admin/AdminConsole';
 import { sample } from '../sample';
 import { styles } from './styles';
 import { Button,Field,Avatar,Cover,Nav } from './ui';
 import { blank,emptyLibrary,price,searchable,status,type AiTurn,type LibraryData,type Deal,type Message,type ModerationNotice,type Page,type Point,type Review,type User } from './models';
+import { emptyEducation, type EducationDraft } from './features/academic/EducationFields';
 import { AccountScreen } from './features/account/AccountScreen';
 import { DealsScreen } from './features/deals/DealsScreen';
 import { AuthScreen } from './features/auth/AuthScreen';
@@ -59,8 +60,8 @@ export default function EduShare() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
-  const [schoolsOpen, setSchoolsOpen] = useState(false);
-  const [schoolId, setSchool] = useState<string>(schools[0].id);
+  const [registration, setRegistration] = useState<EducationDraft>(emptyEducation);
+  const [education, setEducation] = useState<EducationDraft>(emptyEducation);
   const [type, setType] = useState<ListingType>('digital');
   const [form, setForm] = useState(blank);
   const [aiFields, setAiFields] = useState<string[]>([]);
@@ -126,7 +127,7 @@ export default function EduShare() {
     if (!previous || token) return;
     setTurns([]); setDeals([]); setSelectedDeal(''); setList([]); setContacts([]); setContactQuery(''); setDealFilter(''); setMessages([]);
     setMessage(''); setChatDocument(null); setReviews([]); setPoints({ balance: 0, entries: [] }); setForm(blank); setAiFields([]); setEditing('');
-    setProfileName(''); setAvatar(''); setEvidence(''); setReason(''); setReviewDeal(''); setPlace(''); setTime('');
+    setProfileName(''); setAvatar(''); setEducation(emptyEducation); setEvidence(''); setReason(''); setReviewDeal(''); setPlace(''); setTime('');
     activeChat.current = ''; libraryDirty.current = false; setLibrary(emptyLibrary); setLibraryFilter(''); setLibraryQuery(''); setModerationNotices([]);
     afterLogin.current = 'home'; history.current = []; go('welcome');
   }, [token]);
@@ -149,10 +150,12 @@ export default function EduShare() {
   }, [token, page, peer.id]);
   const authenticate = () => run(async () => {
     if (page === 'register' && password !== confirmation) throw new Error('Mật khẩu xác nhận chưa khớp.');
+    if (page === 'register' && !registration.schoolId) throw new Error('Vui lòng chọn khu vực và trường.');
     const response = page === 'register'
-      ? await signIn('register', { name, email, password, schoolId })
+      ? await signIn('register', { name, email, password, schoolId: registration.schoolId, majorId: registration.majorId,
+        specializationId: registration.specializationId })
       : await signIn('login', { email, password });
-    setRegion(response.user.region); setPassword(''); setConfirmation('');
+    setRegistration(emptyEducation); setRegion(response.user.region); setPassword(''); setConfirmation('');
     const destination = afterLogin.current;
     afterLogin.current = 'home'; history.current = destination === 'home' ? [] : ['home'];
     setNotice(''); go('home');
@@ -322,8 +325,7 @@ export default function EduShare() {
       if (previous !== 'login' && previous !== 'register') afterLogin.current = 'home';
       if (!desktop || !back()) open('welcome');
     }} name={name} setName={setName} email={email} setEmail={setEmail} password={password} setPassword={setPassword}
-      confirmation={confirmation} setConfirmation={setConfirmation} schoolsOpen={schoolsOpen} setSchoolsOpen={setSchoolsOpen} schoolId={schoolId}
-      setSchool={setSchool} notice={notice} busy={busy} authenticate={authenticate} />;
+      confirmation={confirmation} setConfirmation={setConfirmation} education={registration} setEducation={setRegistration} notice={notice} busy={busy} authenticate={authenticate} />;
   }
   const heading: Partial<Record<Page, string>> = { login: 'Đăng nhập', register: 'Đăng ký', detail: 'Chi tiết tài liệu', publish: 'Đăng tài liệu', preview: 'Xem trước bài đăng', posted: 'Đã gửi duyệt', account: 'Hồ sơ của tôi', saved: 'Tài liệu đã lưu', mine: 'Bài đăng của tôi', deals: 'Lịch sử giao dịch', appointment: 'Đặt lịch nhận', wallet: 'Ví điểm', inbox: 'Tin nhắn', chat: peer.name, profile: 'Hồ sơ công khai', assistant: 'Trợ lý AI', report: 'Báo cáo tài liệu', edit: 'Chỉnh sửa hồ sơ', review: 'Đánh giá giao dịch', region: 'Khu vực giao dịch', notifications: 'Thông báo', dealProgress: 'Tiến trình giao dịch', pdfOpened: 'Tài liệu PDF', reportSent: 'Đã gửi báo cáo' };
   const destinations: Destination[] = [
@@ -412,11 +414,23 @@ export default function EduShare() {
         onReadCover={readCover} onPickPdf={pickPdf} onPdfUrl={value => setForm(current => ({ ...current, fileUrl: value, pdf: '', fileName: '' }))}
         onPreview={() => open('preview')} onSubmit={() => void submit()} onEdit={() => open('publish')} onMine={() => loadList('/documents/mine', 'mine')} />}
       {(page === 'account' || page === 'edit') && me && <AccountScreen page={page} desktop={desktop} me={me} avatar={avatar} profileName={profileName}
-        setProfileName={setProfileName} onEdit={() => { setProfileName(me.name); setAvatar(me.avatar || ''); open('edit'); }}
+        setProfileName={setProfileName} education={education} setEducation={setEducation}
+        onEdit={() => {
+          setProfileName(me.name); setAvatar(me.avatar || '');
+          setEducation({ region: academicRegions.find(item => item.name === me.region)?.id || '', schoolId: me.schoolId || '',
+            majorId: me.majorId, specializationId: me.specializationId });
+          open('edit');
+        }}
         onSaved={() => { setLibraryFilter('saved'); openWorkspacePage('saved'); }} onMine={() => loadList('/documents/mine', 'mine')}
         onDeals={() => showDeals()} onWallet={() => openWorkspacePage('wallet')} onLogout={logout}
         onPickAvatar={() => void run(async () => { const value = await pick(); if (value) setAvatar(value); })}
-        onSaveProfile={() => void run(async () => { updateUser(await api<User>('/me', 'PATCH', { name: profileName, avatar: avatar || undefined })); open('account'); })} />}
+        onSaveProfile={() => void run(async () => {
+          if (!education.schoolId) throw new Error('Vui lòng chọn khu vực và trường.');
+          const user = await api<User>('/me', 'PATCH', { name: profileName, avatar: avatar || undefined, education });
+          updateUser(user);
+          if (user.region !== me.region) setRegion(user.region);
+          open('account');
+        })} />}
       {page === 'saved' && (desktop ? <StudentLibrary data={library} selected={libraryFilter} choose={setLibraryFilter} query={libraryQuery}
         change={setLibraryQuery} onOpen={showListing} onBrowse={() => open('home')} width={width} /> :
         list.length ? list.map(item => card(item)) : <Text>Chưa có tài liệu đã lưu.</Text>)}

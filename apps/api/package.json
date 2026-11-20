@@ -6,7 +6,8 @@
     "dev": "tsx --env-file-if-exists=.env src/server.ts",
     "check": "tsc --noEmit",
     "seed:demo": "tsx --env-file-if-exists=.env src/seed.ts",
-    "test": "tsx --test test/app.test.ts"
+    "test": "tsx --test test/app.test.ts test/catalog.test.ts",
+    "catalog:sync": "tsx --env-file-if-exists=.env src/modules/academic/sync.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -18,6 +19,7 @@
     "@types/cors": "^2.8.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "cheerio": "^1.1.2",
     "tsx": "^4.20.0",
     "typescript": "~5.9.2"
   }

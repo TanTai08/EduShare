@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { SessionUser } from '../../../../packages/contracts';
+import type { EducationSelection, SessionUser } from '../../../../packages/contracts';
 import { ApiError, requestApi, type Api } from '../services/api';
 
 const storageKey = 'edushare-session';
 type Session = { token: string; user: SessionUser };
 type Credentials = { email: string; password: string };
-type Registration = Credentials & { name: string; schoolId: string };
+type Registration = Credentials & EducationSelection & { name: string };
 type AuthState = {
   token: string;
   user: SessionUser | null;
