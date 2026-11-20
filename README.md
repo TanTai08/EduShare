@@ -74,7 +74,7 @@ npm run check
 npm run seed:demo
 ```
 
-Lệnh thêm ba tài khoản sinh viên, mỗi tài khoản có 50 điểm ban đầu, và năm bài đã duyệt gồm PDF đọc được, giáo trình bán và bản in đổi điểm tại Đà Nẵng và Huế. Chạy lại giữ nguyên tài khoản, số dư, mật khẩu và bài đã tạo.
+Lệnh chuẩn bị 10 tài khoản sinh viên tại Đà Nẵng và Huế, mỗi tài khoản mới có 50 điểm ban đầu và một bài chờ duyệt. Ngoài 10 bài chờ duyệt, có 5 bài đã duyệt để thử Trang chủ. Chạy lại giữ nguyên tài khoản, số dư, mật khẩu và trạng thái các bài đã tạo.
 
 | Email đăng nhập | Khu vực | Dùng để thử |
 | --- | --- | --- |
@@ -82,4 +82,4 @@ Lệnh thêm ba tài khoản sinh viên, mỗi tài khoản có 50 điểm ban �
 | `demo.buyer@edushare.example` | Đà Nẵng | Mua và đổi điểm |
 | `demo.hue@edushare.example` | Huế | Danh sách Huế và giới hạn giao nhận |
 
-Dùng mật khẩu bạn đặt ở lần seed đầu tiên. Nếu đang đăng nhập tài khoản thật, đăng xuất để đổi sang tài khoản mẫu.
+Bảy tài khoản bổ sung dùng email từ `demo04@edushare.example` đến `demo10@edushare.example`. Dùng mật khẩu bạn đặt khi mỗi tài khoản được tạo lần đầu. Nếu đang đăng nhập tài khoản thật, đăng xuất để đổi sang tài khoản mẫu.

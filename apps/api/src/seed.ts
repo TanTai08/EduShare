@@ -6,6 +6,13 @@ const accounts = [
   { email: 'demo.danang@edushare.example', name: 'Nguyễn Minh Anh', schoolId: 'vku' },
   { email: 'demo.buyer@edushare.example', name: 'Trần Lan Phương', schoolId: 'dut' },
   { email: 'demo.hue@edushare.example', name: 'Lê Bảo Nam', schoolId: 'husc' },
+  { email: 'demo04@edushare.example', name: 'Mai Hoàng Linh', schoolId: 'vku' },
+  { email: 'demo05@edushare.example', name: 'Phạm Gia Huy', schoolId: 'dut' },
+  { email: 'demo06@edushare.example', name: 'Võ Thảo Vy', schoolId: 'vku' },
+  { email: 'demo07@edushare.example', name: 'Bùi Nhật Quang', schoolId: 'dut' },
+  { email: 'demo08@edushare.example', name: 'Ngô Thanh Hà', schoolId: 'husc' },
+  { email: 'demo09@edushare.example', name: 'Đặng Minh Khoa', schoolId: 'hueedu' },
+  { email: 'demo10@edushare.example', name: 'Hoàng Ngọc Trâm', schoolId: 'hueedu' },
 ];
 const listings = [
   { key: 'dn-sale', owner: 0, title: 'Giáo trình Cấu trúc dữ liệu', subject: 'Cấu trúc dữ liệu', category: 'Giáo trình', description: 'Giáo trình bản in. Hẹn nhận tại thư viện trường.', type: 'sale', price: 25000 },
@@ -14,6 +21,21 @@ const listings = [
   { key: 'hue-sale', owner: 2, title: 'Giáo trình Cơ sở dữ liệu', subject: 'Cơ sở dữ liệu', category: 'Giáo trình', description: 'Bản in giao nhận tại Huế.', type: 'sale', price: 30000 },
   { key: 'hue-points', owner: 2, title: 'Đề cương Mạng máy tính', subject: 'Mạng máy tính', category: 'Đề cương bản in', description: 'Đổi điểm và nhận tại trường ở Huế.', type: 'points', price: 15 },
 ];
+const pendingTopics = [
+  'Toán rời rạc', 'Lập trình Python', 'Mạng máy tính', 'Cơ sở dữ liệu',
+  'Cấu trúc dữ liệu', 'Hệ điều hành', 'An toàn thông tin', 'Xác suất thống kê',
+  'Lập trình Java', 'Thiết kế giao diện',
+];
+const pendingListings = pendingTopics.map((subject, owner) => {
+  const type = (['digital', 'sale', 'points'] as const)[owner % 3];
+  const category = type === 'digital' ? 'Đề cương PDF' : type === 'sale' ? 'Giáo trình' : 'Slide bản in';
+  return {
+    key: 'pending-' + (owner + 1), owner, title: category + ' ' + subject,
+    subject, category, type, price: type === 'digital' ? 0 : type === 'sale' ? 25000 : 20,
+    description: 'Bài đăng mẫu để kiểm thử quy trình duyệt trên EduShare.',
+    status: 'pending',
+  };
+});
 const demoId = (key: string) => new Types.ObjectId(createHash('sha256').update('edushare-demo:v1:' + key).digest('hex').slice(0, 24));
 function samplePdf() {
   const stream = 'BT /F1 22 Tf 48 748 Td (EduShare - De on tap mau) Tj /F1 12 Tf 0 -36 Td (1. Tinh ky vong va phuong sai cua bien ngau nhien.) Tj 0 -24 Td (2. Neu vi du ve phan phoi nhi thuc.) Tj ET';
@@ -52,9 +74,10 @@ async function seed() {
       await models.users.create([{ ...account, _id: id, password: salt + ':' + scryptSync(password, salt, 64).toString('hex'), points: 50 }], { session });
       await models.points.create([{ key: 'demo:initial:' + id, user: String(id), amount: 50, reason: 'Điểm khởi tạo tài khoản mẫu' }], { session });
     }
-    for (const { key, owner, ...listing } of listings) {
+    const documents = [...listings.map(listing => ({ ...listing, status: 'approved' })), ...pendingListings];
+    for (const { key, owner, ...listing } of documents) {
       const file = listing.type === 'digital' ? { fileName: 'de-on-tap-mau.pdf', pdf: samplePdf() } : {};
-      await models.docs.updateOne({ _id: demoId(key) }, { $setOnInsert: { ...listing, ...file, owner: String(demoId(accounts[owner].email)), status: 'approved' } }, { upsert: true, session, timestamps: false });
+      await models.docs.updateOne({ _id: demoId(key) }, { $setOnInsert: { ...listing, ...file, owner: String(demoId(accounts[owner].email)), createdAt: new Date(), updatedAt: new Date() } }, { upsert: true, session, timestamps: false });
     }
   });
   console.log('Đã chuẩn bị dữ liệu mẫu trong database ' + mongoose.connection.name + '.');
