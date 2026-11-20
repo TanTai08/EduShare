@@ -52,6 +52,8 @@ export default function EduShare() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [schoolsOpen, setSchoolsOpen] = useState(false);
   const [schoolId, setSchool] = useState<string>(schools[0].id);
   const [type, setType] = useState<ListingType>('digital');
   const [form, setForm] = useState(blank);
@@ -122,10 +124,11 @@ export default function EduShare() {
     return () => { alive = false; clearInterval(interval); };
   }, [token, page, peer.id]);
   const authenticate = () => run(async () => {
+    if (page === 'register' && password !== confirmation) throw new Error('Mật khẩu xác nhận chưa khớp.');
     const response = await api<{ token: string; user: User }>(page === 'register' ? '/auth/register' : '/auth/login', 'POST',
       page === 'register' ? { name, email, password, schoolId } : { email, password });
     await AsyncStorage.setItem('edushare-session', response.token);
-    setMe(response.user); setToken(response.token); setRegion(response.user.region); setPassword(''); open('home');
+    setMe(response.user); setToken(response.token); setRegion(response.user.region); setPassword(''); setConfirmation(''); open('home');
   });
   async function pick(): Promise<string | undefined> {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.45 });
@@ -165,19 +168,61 @@ export default function EduShare() {
   }
   function toggleFilter(value: ListingType) { setQ(''); setFilter(current => current === value ? '' : value); }
   const matches = items.filter(item => [item.title, item.subject, item.category, item.owner?.school || ''].some(v => v.toLowerCase().includes(q.toLowerCase())));
+  if (page === 'welcome' || page === 'login' || page === 'register') {
+    const welcome = page === 'welcome';
+    const register = page === 'register';
+    const title = register ? 'Đăng ký' : 'Đăng nhập';
+    return <SafeAreaView style={[authStyles.shell, !welcome && authStyles.yellow]} edges={['top']}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={authStyles.scroll}>
+        {welcome ? <>
+          <View style={authStyles.intro}>
+            <View style={authStyles.illustration}><Ionicons name="library" size={74} color="#26396e" /><Ionicons name="school" size={39} color="#26396e" /></View>
+            <Text style={authStyles.brand}>EduShare</Text><Text style={authStyles.muted}>Tài liệu học tập cho sinh viên</Text>
+          </View>
+          <View style={authStyles.welcomePanel}>
+            <Text style={authStyles.title}>Chào mừng!</Text>
+            <Text style={authStyles.description}>Mua, trao đổi và tải tài liệu học tập cùng cộng đồng sinh viên.</Text>
+            <View style={authStyles.actions}>
+              <AuthButton caption="Đăng nhập" press={() => open('login')} />
+              <AuthButton caption="Đăng ký" light press={() => open('register')} />
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => open('home')}><Text style={authStyles.guest}>Khám phá tài liệu</Text></Pressable>
+          </View>
+        </> : <>
+          <View style={authStyles.header}>
+            <View style={authStyles.headerRow}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" hitSlop={12} onPress={() => open('welcome')}><Ionicons name="arrow-back" size={22} color="#151512" /></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => { setSchoolsOpen(false); open(register ? 'login' : 'register'); }}><Text style={authStyles.link}>{register ? 'Đăng nhập' : 'Đăng ký'}</Text></Pressable>
+            </View>
+            <Text style={authStyles.title}>{title}</Text>
+            <Text style={authStyles.description}>{register ? 'Tạo tài khoản để chia sẻ tài liệu học tập.' : 'Chào mừng bạn trở lại EduShare.'}</Text>
+          </View>
+          <View style={authStyles.form}>
+            {register && <AuthInput label="Họ và tên" value={name} change={setName} />}
+            <AuthInput label="Email sinh viên" value={email} change={setEmail} email />
+            <AuthInput label="Mật khẩu" value={password} change={setPassword} secret />
+            {register && <>
+              <AuthInput label="Xác nhận mật khẩu" value={confirmation} change={setConfirmation} secret />
+              <Pressable accessibilityRole="button" accessibilityState={{ expanded: schoolsOpen }} style={authStyles.school} onPress={() => setSchoolsOpen(value => !value)}>
+                <Text style={authStyles.schoolText}>{schools.find(s => s.id === schoolId)?.name}</Text><Ionicons name={schoolsOpen ? 'chevron-up' : 'chevron-down'} size={16} />
+              </Pressable>
+              {schoolsOpen && schools.map(s => <Pressable key={s.id} accessibilityRole="button" accessibilityState={{ selected: s.id === schoolId }} style={authStyles.school} onPress={() => { setSchool(s.id); setSchoolsOpen(false); }}>
+                <Text style={authStyles.schoolText}>{s.name}</Text>{s.id === schoolId && <Ionicons name="checkmark" size={18} />}
+              </Pressable>)}
+            </>}
+            {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
+            <View style={authStyles.submit}><AuthButton caption={busy ? 'Đang xử lý…' : title} press={authenticate} disabled={busy} /></View>
+          </View>
+        </>}
+      </ScrollView>
+    </SafeAreaView>;
+  }
   const heading: Partial<Record<Page, string>> = { login: 'Đăng nhập', register: 'Đăng ký', detail: 'Chi tiết tài liệu', publish: 'Đăng tài liệu', preview: 'Xem trước bài đăng', posted: 'Đã gửi duyệt', account: 'Hồ sơ của tôi', saved: 'Tài liệu đã lưu', mine: 'Bài đăng của tôi', deals: 'Lịch sử giao dịch', appointment: 'Đặt lịch nhận', wallet: 'Ví điểm', inbox: 'Tin nhắn', chat: peer.name, profile: 'Hồ sơ công khai', assistant: 'Trợ lý AI', report: 'Báo cáo tài liệu', moderation: 'Duyệt bài đăng', edit: 'Chỉnh sửa hồ sơ', review: 'Đánh giá giao dịch' };
   return <SafeAreaView style={styles.shell}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       {heading[page] && <Pressable accessibilityRole="button" onPress={() => open('home')} style={styles.row}><Ionicons name="arrow-back" size={22} /><Text style={styles.heading}>{heading[page]}</Text></Pressable>}
       {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
       {busy && <Text style={styles.small}>Đang xử lý…</Text>}
-      {page === 'welcome' && <><View style={styles.hero}><Ionicons name="library" size={64} color="#223954" /><Text style={styles.brand}>EduShare</Text><Text style={styles.subtitle}>Kho tài liệu dành cho sinh viên</Text></View><Button caption="Đăng nhập" onPress={() => open('login')} /><Button caption="Đăng ký" onPress={() => open('register')} alt /><Button caption="Khám phá tài liệu" onPress={() => open('home')} alt /></>}
-      {(page === 'login' || page === 'register') && <>
-        {page === 'register' && <><Field label="Họ và tên" value={name} change={setName} /><Text style={styles.bold}>Trường của bạn</Text>{schools.map(s => <Button key={s.id} caption={s.name} onPress={() => setSchool(s.id)} alt={schoolId !== s.id} />)}</>}
-        <Field label="Email sinh viên" value={email} change={setEmail} /><Field label="Mật khẩu" value={password} change={setPassword} secret />
-        <Button caption={page === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'} onPress={authenticate} />
-        <Button caption={page === 'login' ? 'Tạo tài khoản mới' : 'Đã có tài khoản'} onPress={() => open(page === 'login' ? 'register' : 'login')} alt />
-      </>}
       {page === 'home' && <>
         <View style={styles.row}><View style={styles.brandIcon}><Ionicons name="book-outline" size={18} color="#171815" /></View><Text style={styles.brandSmall}>EduShare</Text></View>
         <View style={styles.search}>
@@ -311,6 +356,40 @@ export default function EduShare() {
     await run(async () => { await api('/deals/' + id + '/action', 'POST', { action }); setDeals(await api<Deal[]>('/deals')); });
   }
 }
+function AuthInput({ label, value, change, email, secret }: { label: string; value: string; change: (value: string) => void; email?: boolean; secret?: boolean }) {
+  return <TextInput accessibilityLabel={label} value={value} onChangeText={change} placeholder={label} placeholderTextColor="#64645d" secureTextEntry={secret} keyboardType={email ? 'email-address' : 'default'} autoCapitalize={email || secret ? 'none' : 'words'} autoCorrect={false} style={authStyles.input} />;
+}
+function AuthButton({ caption, press, light, disabled }: { caption: string; press: () => void; light?: boolean; disabled?: boolean }) {
+  return <Pressable accessibilityRole="button" disabled={disabled} onPress={press} style={[authStyles.button, light && authStyles.light]}>
+    <Text style={[authStyles.buttonText, light && authStyles.link]}>{caption}</Text>
+  </Pressable>;
+}
+const authStyles = StyleSheet.create({
+  shell: { flex: 1, backgroundColor: '#fff' },
+  yellow: { backgroundColor: '#ffbf13' },
+  scroll: { flexGrow: 1, width: '100%', maxWidth: 535, alignSelf: 'center' },
+  intro: { flex: 1, minHeight: 390, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 12 },
+  illustration: { width: '100%', height: 221, borderRadius: 22, backgroundColor: '#e8e1fc', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 12 },
+  brand: { fontSize: 48, fontWeight: '800', color: '#151512' },
+  muted: { color: '#64645d', fontSize: 14 },
+  welcomePanel: { backgroundColor: '#ffbf13', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 28, paddingTop: 32, paddingBottom: 40, gap: 14 },
+  header: { paddingHorizontal: 28, paddingTop: 24, paddingBottom: 39, gap: 10 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 23 },
+  title: { fontSize: 36, fontWeight: '800', color: '#151512' },
+  description: { fontSize: 15, lineHeight: 21, color: '#151512' },
+  actions: { flexDirection: 'row', gap: 12, marginTop: 15 },
+  form: { flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 31, borderTopRightRadius: 31, padding: 28, paddingTop: 33, gap: 12 },
+  input: { minHeight: 49, borderRadius: 25, backgroundColor: '#f2f3f1', paddingHorizontal: 18, color: '#151512', fontSize: 14 },
+  school: { minHeight: 48, borderRadius: 20, backgroundColor: '#f2f3f1', paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  schoolText: { flex: 1, color: '#35352e', fontSize: 13 },
+  submit: { flexDirection: 'row', marginTop: 15 },
+  button: { flex: 1, minHeight: 49, borderRadius: 25, backgroundColor: '#151512', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  light: { backgroundColor: '#fff' },
+  buttonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  link: { color: '#151512', fontSize: 14, fontWeight: '700' },
+  guest: { textAlign: 'center', fontSize: 13, color: '#151512', fontWeight: '600' },
+});
+
 function HomeTile({ name, glyph, color, circle, active, press }: { name: string; glyph: React.ComponentProps<typeof Ionicons>['name']; color: string; circle?: boolean; active?: boolean; press: () => void }) {
   return <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(active) }} onPress={press} style={styles.tile}>
     <View style={[styles.tileIcon, { backgroundColor: color }, circle && styles.circle, active && styles.tileSelected]}>

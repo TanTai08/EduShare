@@ -65,3 +65,21 @@ Bản đầu dùng email và mật khẩu; chưa có Google/Facebook OAuth hay k
 ```sh
 npm run check
 ```
+
+## Tạo dữ liệu mẫu trên MongoDB
+
+Đặt `DEMO_PASSWORD` từ 8 ký tự trong `apps/api/.env` cùng với `MONGODB_URI`. Từ thư mục gốc chạy:
+
+```sh
+npm run seed:demo
+```
+
+Lệnh thêm ba tài khoản sinh viên, mỗi tài khoản có 50 điểm ban đầu, và năm bài đã duyệt gồm PDF đọc được, giáo trình bán và bản in đổi điểm tại Đà Nẵng và Huế. Chạy lại giữ nguyên tài khoản, số dư, mật khẩu và bài đã tạo.
+
+| Email đăng nhập | Khu vực | Dùng để thử |
+| --- | --- | --- |
+| `demo.danang@edushare.example` | Đà Nẵng | Người đăng |
+| `demo.buyer@edushare.example` | Đà Nẵng | Mua và đổi điểm |
+| `demo.hue@edushare.example` | Huế | Danh sách Huế và giới hạn giao nhận |
+
+Dùng mật khẩu bạn đặt ở lần seed đầu tiên. Nếu đang đăng nhập tài khoản thật, đăng xuất để đổi sang tài khoản mẫu.
