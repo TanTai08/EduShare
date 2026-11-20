@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import mongoose, { Types } from 'mongoose';
+import { registerAdmin } from './admin.js';
 import { models } from './models.js';
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { z, ZodError } from 'zod';
@@ -25,16 +26,22 @@ async function auth(req: express.Request) {
   if (!token) return fail(401, 'Vui lòng đăng nhập.');
   const session = await models.tokens.findOne({ hash: hash(token), expires: { $gt: new Date() } });
   const user = session && await models.users.findById(session.user);
-  return user || fail(401, 'Phiên đăng nhập đã hết hạn.');
+  if (!user) return fail(401, 'Phiên đăng nhập đã hết hạn.');
+  if (user.status === 'locked') return fail(403, 'Tài khoản đã bị khóa.');
+  return user;
 }
 async function requireStudent(req: express.Request) {
   const user = await auth(req);
   if (user.role === 'admin') return fail(403, 'Tài khoản quản trị chỉ dùng để quản lý EduShare.');
   return user;
 }
+function checkParticipation(user: User) {
+  if (user.status === 'restricted') return fail(403, 'Tài khoản đang bị hạn chế đăng bài, đặt hẹn và gửi tin nhắn.');
+}
 async function requireAdmin(req: express.Request) {
   const user = await auth(req);
   if (user.role !== 'admin') return fail(403, 'Chỉ quản trị viên có quyền truy cập.');
+  return user;
 }
 async function login(user: User) {
   const token = randomBytes(32).toString('hex');
@@ -75,6 +82,7 @@ app.post('/auth/login', async (req, res) => {
   if (!user || !expected || !timingSafeEqual(Buffer.from(expected, 'hex'), scryptSync(input.password, salt, 64))) {
     return fail(401, 'Email hoặc mật khẩu chưa đúng.');
   }
+  if (user.status === 'locked') return fail(403, 'Tài khoản đã bị khóa.');
   res.json(await login(user));
 });
 app.get('/me', async (req, res) => res.json(privateUser(await auth(req))));
@@ -128,19 +136,27 @@ app.get('/documents/:id/pdf', async (req, res) => {
   res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline', 'X-Content-Type-Options': 'nosniff' });
   res.send(Buffer.from(doc.pdf));
 });
+app.post('/documents/:id/open', async (req, res) => {
+  const doc = await models.docs.findOne({ _id: objectId.parse(req.params.id), status: 'approved', type: 'digital' }).select('fileUrl fileName');
+  if (!doc || (!doc.fileUrl && !doc.fileName)) return fail(404, 'Không tìm thấy tệp tài liệu.');
+  await models.opens.create({ doc: doc.id });
+  res.json({ url: doc.fileUrl, path: doc.fileUrl ? undefined : '/documents/' + doc.id + '/pdf' });
+});
 app.get('/documents/:id', async (req, res) => {
   const doc = await models.docs.findOne({ _id: objectId.parse(req.params.id), status: 'approved' }) || fail(404, 'Không tìm thấy tài liệu.');
   res.json(await serializeDoc(doc));
 });
 app.post('/documents', async (req, res) => {
   const user = await requireStudent(req);
+  checkParticipation(user);
   const { pdf, ...input } = listing.parse(req.body);
   const doc = await models.docs.create({ ...input, fileName: pdf ? input.fileName || 'tai-lieu.pdf' : undefined,
-    pdf: pdf ? Buffer.from(pdf, 'base64') : undefined, owner: user.id, status: 'pending' });
+    pdf: pdf ? Buffer.from(pdf, 'base64') : undefined, owner: user.id, status: 'pending', submittedAt: new Date() });
   res.status(201).json(await serializeDoc(doc));
 });
 app.patch('/documents/:id', async (req, res) => {
   const user = await requireStudent(req);
+  checkParticipation(user);
   const id = objectId.parse(req.params.id);
   const previous = await models.docs.findOne({ _id: id, owner: user.id, status: 'revision' }).select('+pdf') || fail(404, 'Chỉ sửa được bài được yêu cầu bổ sung.');
   const body = { ...req.body };
@@ -149,10 +165,14 @@ app.patch('/documents/:id', async (req, res) => {
     body.fileName = previous.fileName;
   }
   const { pdf, ...input } = listing.parse(body);
-  previous.set({ ...input, fileName: pdf ? input.fileName || 'tai-lieu.pdf' : undefined,
-    pdf: pdf ? Buffer.from(pdf, 'base64') : undefined, fileUrl: input.fileUrl, status: 'pending', feedback: '' });
-  await previous.save();
-  const doc = previous;
+  const doc = await models.docs.findOneAndUpdate({ _id: id, owner: user.id, status: 'revision' }, { $set: {
+    title: input.title, subject: input.subject, category: input.category, description: input.description, type: input.type, price: input.price,
+    ...(input.cover && { cover: input.cover }), ...(input.fileUrl && { fileUrl: input.fileUrl }),
+    ...(pdf && { pdf: Buffer.from(pdf, 'base64'), fileName: input.fileName || 'tai-lieu.pdf' }),
+    status: 'pending', submittedAt: new Date(), feedback: '',
+  }, $unset: { ...(!input.cover && { cover: 1 }), ...(!input.fileUrl && { fileUrl: 1 }), ...(!pdf && { pdf: 1, fileName: 1 }) },
+    $inc: { revisions: 1 },
+  }, { new: true }) || fail(409, 'Bài đăng đã đổi trạng thái.');
   res.json(await serializeDoc(doc));
 });
 app.post('/documents/:id/save', async (req, res) => {
@@ -170,51 +190,37 @@ async function delta(user: string, key: string, amount: number, reason: string, 
   if (!result.matchedCount) return fail(409, 'Không đủ điểm hoặc hồ sơ không còn tồn tại.');
   await models.points.create([{ user, key, amount, reason }], { session });
 }
+app.get('/notifications/moderation', async (req, res) => {
+  const user = await auth(req);
+  const documents = await models.docs.find({ owner: user.id }).select('title');
+  const byId = new Map(documents.map(doc => [doc.id, doc.title]));
+  const entries = await models.moderationLog.find({ target: { $in: [...byId.keys()] }, $or: [{ kind: 'post' }, { kind: 'report', action: 'remove' }] })
+    .sort({ createdAt: -1 }).limit(30).select('action target note createdAt');
+  res.json(entries.map(entry => ({ id: entry.id, title: byId.get(entry.target!), action: entry.action, note: entry.note, createdAt: entry.createdAt })));
+});
 app.get('/points', async (req, res) => {
   const user = await auth(req);
   res.json({ balance: user.points, entries: await models.points.find({ user: user.id }).sort({ createdAt: -1 }).limit(100) });
 });
-app.get('/admin/users', async (req, res) => {
-  await requireAdmin(req);
-  const users = await models.users.find().select('name email schoolId role').sort({ createdAt: -1 }).limit(100);
-  res.json(users.map(user => ({ id: user.id, name: user.name, email: user.email, school: school(user.schoolId)?.name, role: user.role || 'student' })));
-});
-app.get('/admin/reports', async (req, res) => {
-  await requireAdmin(req);
-  const reports = await models.reports.find({ status: 'pending' }).sort({ createdAt: -1 }).limit(50);
-  const docs = await models.docs.find({ _id: { $in: reports.map(report => report.doc) } }).select('title');
-  const titles = new Map(docs.map(doc => [doc.id, doc.title]));
-  res.json(reports.map(report => ({ id: report.id, title: titles.get(report.doc!) || 'Tài liệu đã mất', reason: report.reason, description: report.description, image: report.image })));
-});
-app.post('/admin/reports/:id/resolve', async (req, res) => {
-  await requireAdmin(req);
-  const report = await models.reports.findOneAndUpdate({ _id: objectId.parse(req.params.id), status: 'pending' }, { status: 'resolved' });
-  if (!report) return fail(404, 'Không tìm thấy báo cáo đang chờ.');
-  res.json({ ok: true });
-});
-app.get('/moderation', async (req, res) => {
-  await requireAdmin(req);
-  res.json(await Promise.all((await models.docs.find({ status: 'pending' }).limit(50)).map(serializeDoc)));
-});
-app.post('/moderation/:id', async (req, res) => {
-  await requireAdmin(req);
-  const { approved, feedback } = z.object({ approved: z.boolean(), feedback: z.string().max(500).optional() }).parse(req.body);
-  await mongoose.connection.transaction(async session => {
-    const doc = await models.docs.findOneAndUpdate({ _id: objectId.parse(req.params.id), status: 'pending' }, { status: approved ? 'approved' : 'revision', feedback: approved ? '' : feedback || 'Vui lòng kiểm tra thông tin tài liệu.' }, { session, new: true }) || fail(409, 'Bài đăng đã được xử lý.');
-    if (approved && doc.type === 'digital') await delta(doc.owner!, 'document:' + doc.id, 10, 'Tài liệu số được duyệt', session);
-  });
-  res.json({ ok: true });
-});
+registerAdmin(app, { requireAdmin, fail, hash, objectId, schoolId, credentials, publicUser, delta, serializeDoc });
 app.post('/deals', async (req, res) => {
   const user = await requireStudent(req);
+  checkParticipation(user);
   const input = z.object({ doc: objectId, location: text(160), time: text(80) }).parse(req.body);
   const deal = await mongoose.connection.transaction(async session => {
     const doc = await models.docs.findOne({ _id: input.doc, status: 'approved' }).session(session) || fail(404, 'Không tìm thấy tài liệu.');
     if (doc.type === 'digital' || doc.owner === user.id) return fail(400, 'Tài liệu này không thể đặt hẹn.');
     const seller = await models.users.findById(doc.owner).session(session) || fail(404, 'Không tìm thấy người đăng.');
+    if (seller.status === 'locked' || seller.status === 'restricted') return fail(403, 'Người đăng hiện không nhận lịch hẹn mới.');
     if (seller.role === 'admin') return fail(403, 'Bài của tài khoản quản trị không nhận đặt hẹn.');
     if (!school(user.schoolId) || school(seller.schoolId)?.region !== school(user.schoolId)?.region) return fail(403, 'Chỉ giao nhận trong cùng khu vực.');
+    // Serialize opening a deal with account status changes for either participant.
+    const participants = await models.users.updateMany({ _id: { $in: [user.id, seller.id] }, status: { $nin: ['restricted', 'locked'] } },
+      { $inc: { dealVersion: 1 } }, { session });
+    if (participants.matchedCount !== 2) return fail(403, 'Một tài khoản hiện không thể tạo lịch hẹn.');
     if (await models.deals.exists({ doc: doc.id, status: 'completed' }).session(session)) return fail(409, 'Tài liệu đã được giao.');
+    const available = await models.docs.updateOne({ _id: doc.id, status: 'approved' }, { $inc: { dealVersion: 1 } }, { session });
+    if (!available.matchedCount) return fail(409, 'Tài liệu đã bị gỡ.');
     const [entry] = await models.deals.create([{ ...input, seller: seller.id, buyer: user.id, type: doc.type, price: doc.price, status: 'requested' }], { session });
     if (doc.type === 'points') await delta(user.id, 'hold:' + entry.id, -doc.price!, 'Giữ điểm nhận bản in', session);
     return entry;
@@ -280,6 +286,7 @@ app.get('/chat/:id', async (req, res) => {
 });
 app.post('/chat/:id', async (req, res) => {
   const user = await requireStudent(req);
+  checkParticipation(user);
   const to = objectId.parse(req.params.id);
   if (to === user.id || !await models.users.exists({ _id: to })) return fail(404, 'Không tìm thấy người nhận.');
   const { text: message } = z.object({ text: text(2000) }).parse(req.body);

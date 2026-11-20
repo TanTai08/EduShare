@@ -11,7 +11,7 @@ export type PublicUser = { id: string; name: string; school: string; region: str
 export type Listing = {
   id: string; title: string; subject: string; category: string; description: string;
   type: ListingType; price: number; cover?: string; fileUrl?: string; fileName?: string; owner: PublicUser;
-  status: 'pending' | 'approved' | 'revision';
+  status: 'pending' | 'approved' | 'revision' | 'rejected' | 'removed'; feedback?: string;
 };
 export const listingLabels: Record<ListingType, string> = {
   digital: 'Tải miễn phí', sale: 'Bán bản in', points: 'Nhận bằng điểm',

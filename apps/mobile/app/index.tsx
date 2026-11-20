@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, BackHandler, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
 } from 'react-native';
@@ -9,6 +9,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { listingLabels, schools, type Listing, type ListingType, type PublicUser } from '../../../packages/contracts';
+import AdminConsole from '../src/admin/AdminConsole';
 import { sample } from '../src/sample';
 
 const endpoint = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000');
@@ -19,16 +20,14 @@ function validateSessionUser(user: User) {
   }
   return user;
 }
-type AdminUser = { id: string; name: string; email: string; school?: string; role: string };
-type AdminReport = { id: string; title: string; reason: string; description: string; image?: string };
-type AdminTab = 'posts' | 'users' | 'reports';
+type ModerationNotice = { id: string; title: string; action: string; note?: string; createdAt: string };
 type Deal = { _id: string; buyer: string; seller: string; type: string; price: number; time: string; location: string; status: string; confirmations: string[]; counterparty?: PublicUser; document?: { title: string; cover?: string } };
 type AiTurn = { question: string; answer: string; sources: { id: string; title: string }[] };
 type Message = { _id: string; from: string; text: string };
 type Point = { _id: string; amount: number; reason: string };
 type Review = { _id: string; rating: number; text: string };
 type Page = 'welcome' | 'login' | 'register' | 'home' | 'detail' | 'publish' | 'preview' | 'posted' | 'account' | 'saved' | 'mine' | 'wallet' | 'deals' | 'appointment' | 'inbox' | 'chat' | 'profile' | 'assistant' | 'report' | 'edit' | 'review' | 'region' | 'notifications' | 'dealProgress' | 'pdfOpened' | 'reportSent';
-const status: Record<string, string> = { requested: 'Chờ người đăng xác nhận', scheduled: 'Đã hẹn', waiting: 'Chờ bên còn lại xác nhận', completed: 'Hoàn tất', cancelled: 'Đã hủy', pending: 'Chờ duyệt', approved: 'Đã duyệt', revision: 'Cần sửa' };
+const status: Record<string, string> = { requested: 'Chờ người đăng xác nhận', scheduled: 'Đã hẹn', waiting: 'Chờ bên còn lại xác nhận', completed: 'Hoàn tất', cancelled: 'Đã hủy', pending: 'Chờ duyệt', approved: 'Đã duyệt', revision: 'Cần sửa', rejected: 'Đã từ chối', removed: 'Đã gỡ', remove: 'Đã gỡ' };
 const money = (n: number) => n.toLocaleString('vi-VN') + ' ₫';
 const price = (doc: Listing) => doc.type === 'digital' ? 'Miễn phí' : doc.type === 'sale' ? money(doc.price) : doc.price + ' điểm';
 const blank = { title: '', subject: '', category: '', description: '', cost: '', fileUrl: '', cover: '', pdf: '', fileName: '' };
@@ -58,10 +57,7 @@ export default function EduShare() {
   const [items, setItems] = useState<Listing[]>([]);
   const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [catalogRefresh, setCatalogRefresh] = useState(0);
-  const [adminTab, setAdminTab] = useState<AdminTab>('posts');
-  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
-  const [adminReports, setAdminReports] = useState<AdminReport[]>([]);
-  const [feedback, setFeedback] = useState<Record<string, string>>({});
+  const [moderationNotices, setModerationNotices] = useState<ModerationNotice[]>([]);
   const [list, setList] = useState<Listing[]>([]);
   const [doc, setDoc] = useState<Listing>(sample[0]);
   const [q, setQ] = useState('');
@@ -96,7 +92,7 @@ export default function EduShare() {
   const [profileName, setProfileName] = useState('');
   const [avatar, setAvatar] = useState('');
 
-  async function api<T>(path: string, method = 'GET', data?: unknown, session = token): Promise<T> {
+  const api = useCallback(async function api<T>(path: string, method = 'GET', data?: unknown, session = token): Promise<T> {
     const response = await fetch(endpoint + path, {
       method, headers: { ...(session ? { Authorization: 'Bearer ' + session } : {}), ...(data ? { 'Content-Type': 'application/json' } : {}) },
       body: data ? JSON.stringify(data) : undefined,
@@ -105,7 +101,7 @@ export default function EduShare() {
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || 'Không thể kết nối máy chủ.');
     return body as T;
-  }
+  }, [token]);
   async function run(task: () => Promise<void>) {
     if (busy) return;
     setBusy(true); setNotice('');
@@ -179,23 +175,18 @@ export default function EduShare() {
     return encoded;
   }
   function loadList(path: string, next: Page) { void run(async () => { setList(await api<Listing[]>(path)); open(next); }); }
-  async function loadAdmin(tab: AdminTab) {
-    if (tab === 'posts') setList(await api<Listing[]>('/moderation'));
-    if (tab === 'users') setAdminUsers(await api<AdminUser[]>('/admin/users'));
-    if (tab === 'reports') setAdminReports(await api<AdminReport[]>('/admin/reports'));
-    setAdminTab(tab);
-  }
-  useEffect(() => {
-    if (token && me?.role === 'admin') void run(() => loadAdmin('posts'));
-  }, [token, me?.role]);
   const logout = () => void run(async () => {
     await api('/auth/logout', 'POST'); await AsyncStorage.removeItem('edushare-session');
-    setMe(null); setToken(''); setTurns([]); setDeals([]); setList([]); setAdminUsers([]); setAdminReports([]); setFeedback({});
+    setMe(null); setToken(''); setTurns([]); setDeals([]); setList([]); setModerationNotices([]);
     afterLogin.current = 'home'; open('welcome');
   });
   function showDeals(destination: 'deals' | 'notifications' = 'deals') {
     if (!me) { secured(destination); return; }
-    void run(async () => { setDeals(await api<Deal[]>('/deals')); open(destination); });
+    void run(async () => {
+      const [rows, notices] = await Promise.all([api<Deal[]>('/deals'),
+        destination === 'notifications' ? api<ModerationNotice[]>('/notifications/moderation') : Promise.resolve([])]);
+      setDeals(rows); setModerationNotices(notices); open(destination);
+    });
   }
   useEffect(() => {
     if (!token || (page !== 'deals' && page !== 'notifications' && page !== 'dealProgress')) return;
@@ -233,42 +224,7 @@ export default function EduShare() {
   }
   function toggleFilter(value: ListingType) { setQ(''); setFilter(current => current === value ? '' : value); }
   const matches = items.filter(item => [item.title, item.subject, item.category, item.owner?.school || ''].some(v => v.toLowerCase().includes(q.toLowerCase())));
-  if (me?.role === 'admin') return <SafeAreaView style={styles.shell}>
-    <View style={[styles.adminLayout, desktop && styles.adminDesktop]}>
-      <View style={[styles.adminMenu, desktop && styles.adminSidebar]}>
-        <View style={styles.row}><Ionicons name="shield-checkmark-outline" size={26} color="#203448" /><Text style={styles.detailTitle}>Quản trị EduShare</Text></View>
-        <Text style={styles.small}>{me.name} · Quản trị viên</Text>
-        <View style={desktop ? styles.adminLinks : styles.wrap}>
-          <Button caption="Duyệt bài" alt={adminTab !== 'posts'} onPress={() => void run(() => loadAdmin('posts'))} />
-          <Button caption="Người dùng" alt={adminTab !== 'users'} onPress={() => void run(() => loadAdmin('users'))} />
-          <Button caption="Báo cáo" alt={adminTab !== 'reports'} onPress={() => void run(() => loadAdmin('reports'))} />
-          <Button caption="Đăng xuất" onPress={logout} alt />
-        </View>
-      </View>
-      <ScrollView style={styles.flex} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, desktop && styles.adminContent]}>
-        <Text accessibilityRole="header" style={styles.detailTitle}>{adminTab === 'posts' ? 'Bài chờ duyệt' : adminTab === 'users' ? 'Danh sách người dùng' : 'Báo cáo chờ xử lý'}</Text>
-      {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
-      {busy && <ActivityIndicator color="#9d6a00" />}
-      {adminTab === 'posts' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
-        <View style={styles.row}><Cover doc={item} /><View style={styles.flex}><Text style={styles.bold}>{item.title}</Text><Text style={styles.small}>{item.owner?.name}</Text><Text style={styles.small}>{price(item)}</Text></View></View>
-        <Text style={styles.body}>{item.description}</Text>
-        <Field label="Lý do yêu cầu sửa" value={feedback[item.id] || ''} change={value => setFeedback(current => ({ ...current, [item.id]: value }))} />
-        <View style={styles.wrap}>{[true, false].map(approved => <Button key={String(approved)} caption={approved ? 'Duyệt bài' : 'Yêu cầu sửa'} alt={!approved} onPress={() => void run(async () => {
-          await api('/moderation/' + item.id, 'POST', { approved, feedback: approved ? undefined : feedback[item.id]?.trim() });
-          await loadAdmin('posts');
-        })} />)}</View>
-      </View>) : !busy && <Text>Không có bài chờ duyệt.</Text>)}
-      {adminTab === 'users' && adminUsers.map(user => <View key={user.id} style={styles.panel}>
-        <Text style={styles.bold}>{user.name}</Text><Text>{user.email}</Text><Text style={styles.small}>{user.school} · {user.role === 'admin' ? 'Quản trị viên' : 'Sinh viên'}</Text>
-      </View>)}
-      {adminTab === 'reports' && (adminReports.length ? adminReports.map(report => <View key={report.id} style={styles.panel}>
-        <Text style={styles.bold}>{report.title}</Text><Text>{report.reason}</Text><Text style={styles.body}>{report.description}</Text>
-        {!!report.image && <Image accessibilityLabel="Ảnh minh chứng" source={{ uri: report.image }} style={styles.picture} />}
-        <Button caption="Đánh dấu đã xử lý" alt onPress={() => void run(async () => { await api('/admin/reports/' + report.id + '/resolve', 'POST'); await loadAdmin('reports'); })} />
-      </View>) : !busy && <Text>Không có báo cáo chờ xử lý.</Text>)}
-      </ScrollView>
-    </View>
-  </SafeAreaView>;
+  if (me?.role === 'admin') return <AdminConsole api={api} endpoint={endpoint} me={me} logout={logout} logoutBusy={busy} logoutError={notice} />;
   if (page === 'welcome' || page === 'login' || page === 'register') {
     const welcome = page === 'welcome';
     const register = page === 'register';
@@ -369,9 +325,14 @@ export default function EduShare() {
         <View style={styles.panel}><Text style={styles.bold}>Khu vực hồ sơ</Text><Text>{me?.region || 'Chọn trường khi đăng ký.'}</Text><Text style={styles.small}>Mua bán và nhận bằng điểm áp dụng trong cùng khu vực. PDF miễn phí có thể tải ở mọi nơi.</Text></View>
         {['Đà Nẵng', 'Huế'].map(value => <Button key={value} caption={value} onPress={() => { setRegion(value); open('home'); }} alt={value !== region} />)}
       </>}
+      {page === 'notifications' && moderationNotices.map(entry => <View key={entry.id} style={styles.panel}>
+        <Text style={styles.bold}>{status[entry.action] || entry.action}</Text><Text>{entry.title}</Text>
+        {!!entry.note && <Text style={styles.body}>{entry.note}</Text>}
+        <Text style={styles.small}>{new Date(entry.createdAt).toLocaleString('vi-VN')}</Text>
+      </View>)}
       {page === 'notifications' && (deals.length ? deals.map(deal => <Pressable accessibilityRole="button" key={deal._id} style={styles.panel} onPress={() => { setSelectedDeal(deal._id); open('dealProgress'); }}>
         <Text style={styles.bold}>{status[deal.status]}</Text><Text>{deal.document?.title || 'Tài liệu'}</Text><Text style={styles.small}>{deal.counterparty?.name} · {deal.time}</Text>
-      </Pressable>) : <Text>Chưa có cập nhật giao dịch.</Text>)}
+      </Pressable>) : !moderationNotices.length && <Text>Chưa có thông báo.</Text>)}
       {page === 'detail' && <>
         <Cover doc={doc} hero />
         <Text style={styles.detailTitle}>{doc.title}</Text>
@@ -381,7 +342,7 @@ export default function EduShare() {
           <Avatar user={doc.owner} /><View style={styles.flex}><Text style={styles.bold}>{doc.owner.name}</Text><Text style={styles.small}>{doc.owner.school}</Text></View><Ionicons name="chevron-forward" size={18} />
         </Pressable>
         <View style={styles.detailPanel}><Text style={styles.bold}>Nội dung tài liệu</Text><Text style={styles.body}>{doc.description}</Text></View>
-        {doc.type === 'digital' ? <Button caption="Mở PDF miễn phí" onPress={() => void run(async () => { const target = doc.fileUrl || (doc.fileName ? endpoint + '/documents/' + doc.id + '/pdf' : ''); if (!target) throw new Error('Thêm tài liệu đã duyệt để mở PDF.'); await Linking.openURL(target); open('pdfOpened'); })} /> :
+        {doc.type === 'digital' ? <Button caption="Mở PDF miễn phí" onPress={() => void run(async () => { if (doc.id.startsWith('sample')) { if (!doc.fileUrl) throw new Error('Chưa có tệp PDF.'); await Linking.openURL(doc.fileUrl); } else { const target = await api<{ url?: string; path?: string }>('/documents/' + doc.id + '/open', 'POST'); await Linking.openURL(target.url || endpoint + target.path); } open('pdfOpened'); })} /> :
           <View style={styles.splitActions}><Button caption="Nhắn tin" alt fill onPress={() => startChat(doc.owner, doc)} /><Button fill caption={doc.type === 'sale' ? 'Đặt lịch · ' + price(doc) : 'Giữ chỗ · ' + price(doc)} onPress={() => { if (me && doc.owner.id === me.id) { setNotice('Đây là tài liệu của bạn.'); return; }
           if (me && doc.owner.region !== me.region) { setNotice('Tài liệu này giao nhận tại ' + doc.owner.region + '. Hãy chọn tài liệu cùng khu vực với trường của bạn.'); return; }
           setPlace(''); setTime(''); secured('appointment'); }} /></View>}
@@ -464,7 +425,7 @@ export default function EduShare() {
       {page === 'edit' && me && <><Avatar user={{ ...me, avatar }} /><Button caption="Thay ảnh đại diện" alt onPress={() => void run(async () => { const value = await pick(); if (value) setAvatar(value); })} /><Field label="Họ và tên" value={profileName} change={setProfileName} /><Button caption="Lưu thay đổi" onPress={() => void run(async () => { setMe(await api<User>('/me', 'PATCH', { name: profileName, avatar: avatar || undefined })); open('account'); })} /></>}
       {page === 'saved' && (list.length ? list.map(item => card(item)) : <Text>Chưa có tài liệu đã lưu.</Text>)}
       {page === 'mine' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
-        {card(item)}<Text>{status[item.status]}</Text>
+        {card(item)}<Text>{status[item.status]}</Text>{!!item.feedback && <Text style={styles.small}>{item.feedback}</Text>}
         {item.status === 'revision' && <Button caption="Sửa và gửi lại" onPress={() => { setEditing(item.id); setAiFields([]); setType(item.type); setForm({ title: item.title, subject: item.subject, category: item.category, description: item.description, cover: item.cover || '', cost: String(item.price), fileUrl: item.fileUrl || '', fileName: item.fileName || '', pdf: '' }); open('publish'); }} />}
       </View>) : <Text>Chưa có bài đăng.</Text>)}
       {page === 'wallet' && <><View style={styles.hero}><Text style={styles.heading}>{points.balance} điểm khả dụng</Text></View>{points.entries.map(p => <View key={p._id} style={styles.panel}><Text style={styles.bold}>{p.amount > 0 ? '+' : ''}{p.amount} điểm</Text><Text>{p.reason}</Text></View>)}</>}
@@ -563,12 +524,6 @@ function Nav({ icon, label, press }: { icon: React.ComponentProps<typeof Ionicon
   return <Pressable accessibilityRole="button" onPress={press} style={styles.navItem}><Ionicons name={icon} size={21} color="#213347" /><Text style={styles.small}>{label}</Text></Pressable>;
 }
 const styles = StyleSheet.create({
-  adminLayout: { flex: 1 },
-  adminDesktop: { flexDirection: 'row' },
-  adminMenu: { backgroundColor: '#fff', padding: 20, gap: 12, borderBottomWidth: 1, borderColor: '#e4e8ed' },
-  adminSidebar: { width: 270, borderRightWidth: 1, borderBottomWidth: 0, paddingTop: 32 },
-  adminLinks: { marginTop: 12, gap: 10 },
-  adminContent: { maxWidth: 1120, padding: 32 },
   webHome: { maxWidth: 1080, paddingHorizontal: 32 },
   webNav: { width: '100%', maxWidth: 1080, alignSelf: 'center' },
   detailCover: { width: '100%', height: 143 },
