@@ -2,6 +2,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View,
 import { Ionicons } from '@expo/vector-icons';
 import { listingLabels, type Listing, type ListingType } from '../../../../packages/contracts';
 import { WebButton, palette, type Glyph } from './Workspace';
+import type { LibraryData } from './models';
 
 const types = {
   sale: { label: 'Mua bán', hint: 'Sách và giáo trình bản in', icon: 'bag-handle-outline', color: '#fff1bf' },
@@ -122,7 +123,6 @@ export function LibraryHome({ rows, status, width, region, filter, keyword, cate
   </>;
 }
 
-export type LibraryData = { rows: Listing[]; saved: string[]; recent: string[]; acquired: string[] };
 const libraryFilters = [
   { key: '', label: 'Tất cả' }, { key: 'saved', label: 'Đã lưu' }, { key: 'sale', label: 'Đã mua' },
   { key: 'digital', label: 'Miễn phí' }, { key: 'points', label: 'Đổi điểm' },
