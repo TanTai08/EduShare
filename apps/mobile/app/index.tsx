@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,8 +32,8 @@ function Field({ label, value, change, secret = false }: { label: string; value:
 function Avatar({ user }: { user: PublicUser }) {
   return user.avatar ? <Image source={{ uri: user.avatar }} style={styles.avatar} /> : <View style={styles.avatar}><Text style={styles.bold}>{user.name.slice(0, 1)}</Text></View>;
 }
-function Cover({ doc }: { doc: Listing }) {
-  return doc.cover ? <Image source={{ uri: doc.cover }} style={styles.cover} /> : <View style={[styles.cover, { backgroundColor: doc.type === 'sale' ? '#234569' : doc.type === 'points' ? '#355D53' : '#554579' }]}><Ionicons name="book-outline" color="#ffdc55" size={24} /><Text style={styles.coverTitle} numberOfLines={3}>{doc.title}</Text></View>;
+function Cover({ doc, wide = false }: { doc: Listing; wide?: boolean }) {
+  return doc.cover ? <Image source={{ uri: doc.cover }} style={[styles.cover, wide && styles.wideCover]} /> : <View style={[styles.cover, wide && styles.wideCover, { backgroundColor: doc.type === 'sale' ? '#234569' : doc.type === 'points' ? '#355D53' : '#554579' }]}><Ionicons name="book-outline" color="#ffdc55" size={24} /><Text style={styles.coverTitle} numberOfLines={3}>{doc.title}</Text></View>;
 }
 export default function EduShare() {
   const [page, go] = useState<Page>('welcome');
@@ -41,7 +41,9 @@ export default function EduShare() {
   const [me, setMe] = useState<User | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [items, setItems] = useState<Listing[]>(sample);
+  const [items, setItems] = useState<Listing[]>([]);
+  const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
   const [list, setList] = useState<Listing[]>([]);
   const [doc, setDoc] = useState<Listing>(sample[0]);
   const [q, setQ] = useState('');
@@ -105,11 +107,12 @@ export default function EduShare() {
   useEffect(() => {
     if (page !== 'home') return;
     let alive = true;
+    setCatalogState('loading');
     void api<Listing[]>('/documents?region=' + encodeURIComponent(region) + (filter ? '&type=' + filter : '')).then(rows => {
-      if (alive) setItems(rows);
-    }).catch(() => { if (alive) setItems(sample.filter(doc => (!filter || doc.type === filter) && (doc.type === 'digital' || doc.owner.region === region))); });
+      if (alive) { setItems(rows); setCatalogState('ready'); }
+    }).catch(() => { if (alive) { setItems([]); setCatalogState('error'); } });
     return () => { alive = false; };
-  }, [page, region, filter]);
+  }, [page, region, filter, catalogRefresh]);
   useEffect(() => {
     if (!token || page !== 'chat') return;
     let alive = true;
@@ -160,7 +163,8 @@ export default function EduShare() {
       <Cover doc={value} /><View style={styles.flex}><Text style={styles.bold}>{value.title}</Text><Text style={styles.small}>{value.owner.name}</Text><Text style={styles.small}>{value.owner.school}</Text><Text style={styles.price}>{price(value)}</Text></View>
     </Pressable>;
   }
-  const matches = items.filter(item => [item.title, item.subject, item.category, item.owner.school].some(v => v.toLowerCase().includes(q.toLowerCase())));
+  function toggleFilter(value: ListingType) { setQ(''); setFilter(current => current === value ? '' : value); }
+  const matches = items.filter(item => [item.title, item.subject, item.category, item.owner?.school || ''].some(v => v.toLowerCase().includes(q.toLowerCase())));
   const heading: Partial<Record<Page, string>> = { login: 'Đăng nhập', register: 'Đăng ký', detail: 'Chi tiết tài liệu', publish: 'Đăng tài liệu', preview: 'Xem trước bài đăng', posted: 'Đã gửi duyệt', account: 'Hồ sơ của tôi', saved: 'Tài liệu đã lưu', mine: 'Bài đăng của tôi', deals: 'Lịch sử giao dịch', appointment: 'Đặt lịch nhận', wallet: 'Ví điểm', inbox: 'Tin nhắn', chat: peer.name, profile: 'Hồ sơ công khai', assistant: 'Trợ lý AI', report: 'Báo cáo tài liệu', moderation: 'Duyệt bài đăng', edit: 'Chỉnh sửa hồ sơ', review: 'Đánh giá giao dịch' };
   return <SafeAreaView style={styles.shell}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
@@ -175,17 +179,46 @@ export default function EduShare() {
         <Button caption={page === 'login' ? 'Tạo tài khoản mới' : 'Đã có tài khoản'} onPress={() => open(page === 'login' ? 'register' : 'login')} alt />
       </>}
       {page === 'home' && <>
-        <View style={styles.row}><Ionicons name="library" size={23} color="#9d6a00" /><Text style={styles.brandSmall}>EduShare</Text></View>
-        <Field label="Tìm tài liệu, môn học hoặc trường" value={q} change={setQ} />
-        <View style={styles.banner}><View style={styles.flex}><Text style={styles.bannerTitle}>Tủ tài liệu cho kỳ thi</Text><Text style={styles.bannerText}>Học cùng cộng đồng sinh viên</Text></View><Ionicons name="book-outline" color="#ffcf1a" size={46} /></View>
-        <View style={styles.wrap}>{[['Mua bán', 'bản in'], ['Đổi điểm', 'điểm'], ['Chat', ''], ['Miễn phí', '']].map(([label], i) => <Button key={label} caption={label} alt onPress={() => {
-          if (i === 2) { if (!me) open('login'); else void run(async () => { setContacts(await api<PublicUser[]>('/chat')); open('inbox'); }); return; }
-          setQ(''); const t = i === 0 ? 'sale' : i === 1 ? 'points' : 'digital';
-          setFilter(current => current === t ? '' : t);
-        }} />)}</View>
-        <Text style={styles.heading}>Khu vực giao nhận</Text><View style={styles.wrap}>{['Đà Nẵng', 'Huế'].map(value => <Button key={value} caption={value} onPress={() => setRegion(value)} alt={value !== region} />)}</View>
-        <Text style={styles.heading}>Danh mục nổi bật</Text><View style={styles.wrap}>{['Giáo trình', 'Slide', 'Đề thi', 'PDF'].map(value => <Button key={value} caption={value} alt onPress={() => setQ(value === 'PDF' ? '' : value)} />)}</View>
-        <Text style={styles.heading}>{filter ? listingLabels[filter] : 'Tài liệu nổi bật'}</Text>{matches.length ? matches.map(item => card(item)) : <Text style={styles.small}>Chưa tìm thấy tài liệu phù hợp.</Text>}
+        <View style={styles.row}><View style={styles.brandIcon}><Ionicons name="book-outline" size={18} color="#171815" /></View><Text style={styles.brandSmall}>EduShare</Text></View>
+        <View style={styles.search}>
+          <Ionicons name="search-outline" size={20} color="#203448" />
+          <TextInput accessibilityLabel="Tìm tài liệu" placeholder="Tìm tài liệu, môn học hoặc trường…" placeholderTextColor="#586474" value={q} onChangeText={setQ} style={styles.searchInput} />
+          {!!q && <Pressable accessibilityLabel="Xóa từ khóa" onPress={() => setQ('')}><Ionicons name="close-circle-outline" size={20} color="#586474" /></Pressable>}
+        </View>
+        <View style={styles.banner}>
+          <View style={styles.flex}>
+            <Text style={styles.bannerTitle}>Tủ tài liệu{'\n'}cho kỳ thi</Text>
+            <Text style={styles.bannerText}>Học cùng cộng đồng sinh viên</Text>
+            <Pressable accessibilityRole="button" onPress={() => { setQ(''); setFilter(''); }} style={styles.bannerAction}><Text style={styles.bold}>Khám phá ngay →</Text></Pressable>
+          </View>
+          <Ionicons name="book-outline" color="#ffcf1a" size={57} />
+        </View>
+        <View style={styles.tiles}>
+          <HomeTile name="Mua bán" glyph="bag-handle-outline" color="#fff0ba" active={filter === 'sale'} press={() => toggleFilter('sale')} />
+          <HomeTile name="Đổi điểm" glyph="swap-horizontal-outline" color="#dde9ff" active={filter === 'points'} press={() => toggleFilter('points')} />
+          <HomeTile name="Chat" glyph="chatbubble-ellipses-outline" color="#eae4ff" press={() => me ? void run(async () => { setContacts(await api<PublicUser[]>('/chat')); open('inbox'); }) : open('login')} />
+          <HomeTile name="Miễn phí" glyph="download-outline" color="#ddf5e6" active={filter === 'digital'} press={() => toggleFilter('digital')} />
+        </View>
+        <Text style={styles.heading}>Danh mục nổi bật</Text>
+        <View style={styles.tiles}>
+          <HomeTile name="Sách" glyph="book-outline" color="#fcebc2" circle press={() => { setFilter(''); setQ('Sách'); }} />
+          <HomeTile name="Giáo trình" glyph="document-text-outline" color="#dae9f1" circle press={() => { setFilter(''); setQ('Giáo trình'); }} />
+          <HomeTile name="Slide" glyph="easel-outline" color="#e9e2fa" circle press={() => { setFilter(''); setQ('Slide'); }} />
+          <HomeTile name="Đề thi" glyph="clipboard-outline" color="#fce3df" circle press={() => { setFilter(''); setQ('Đề thi'); }} />
+          <HomeTile name="File PDF" glyph="document-outline" color="#dfefe6" circle press={() => toggleFilter('digital')} />
+        </View>
+        <View style={styles.sectionTitle}><Text style={styles.heading}>{filter ? listingLabels[filter] : 'Tài liệu nổi bật'}</Text>
+          {(filter || q) && <Pressable accessibilityRole="button" onPress={() => { setFilter(''); setQ(''); }}><Text style={styles.small}>Xóa bộ lọc</Text></Pressable>}
+        </View>
+        {catalogState === 'loading' ? <ActivityIndicator accessibilityLabel="Đang tải tài liệu" color="#9d6a00" /> : catalogState === 'error' ?
+          <View style={styles.panel}><Text style={styles.bold}>Chưa tải được danh sách</Text><Text style={styles.small}>Kiểm tra API và kết nối MongoDB.</Text><Button caption="Thử lại" onPress={() => setCatalogRefresh(n => n + 1)} alt /></View> :
+          matches.length ? <View style={styles.grid}>{matches.map(item => <Pressable key={item.id} style={styles.gridItem} onPress={() => { setDoc(item); open('detail'); }}>
+            <Cover doc={item} wide /><Text style={styles.bold} numberOfLines={2}>{item.title}</Text><Text style={styles.small} numberOfLines={1}>{item.owner?.name}</Text><Text style={styles.small} numberOfLines={2}>{item.owner?.school}</Text><Text style={styles.price}>{price(item)}</Text>
+          </Pressable>)}</View> :
+          <View style={styles.panel}><Text style={styles.bold}>{filter || q ? 'Chưa có tài liệu phù hợp' : 'Chưa có tài liệu được duyệt'}</Text>
+          <Text style={styles.small}>{filter || q ? 'Thử xóa bộ lọc hoặc chọn khu vực khác.' : 'Tài liệu sẽ xuất hiện sau khi quản trị viên duyệt.'}</Text></View>}
+        <Text style={styles.heading}>Khu vực giao nhận</Text>
+        <View style={styles.wrap}>{['Đà Nẵng', 'Huế'].map(value => <Button key={value} caption={value} onPress={() => setRegion(value)} alt={value !== region} />)}</View>
         <Button caption="Hỏi Trợ lý AI" onPress={() => { setAnswer(''); secured('assistant'); }} alt />
       </>}
       {page === 'detail' && <>
@@ -278,10 +311,32 @@ export default function EduShare() {
     await run(async () => { await api('/deals/' + id + '/action', 'POST', { action }); setDeals(await api<Deal[]>('/deals')); });
   }
 }
+function HomeTile({ name, glyph, color, circle, active, press }: { name: string; glyph: React.ComponentProps<typeof Ionicons>['name']; color: string; circle?: boolean; active?: boolean; press: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(active) }} onPress={press} style={styles.tile}>
+    <View style={[styles.tileIcon, { backgroundColor: color }, circle && styles.circle, active && styles.tileSelected]}>
+      <Ionicons name={glyph} size={21} color="#203448" />
+    </View>
+    <Text style={styles.tileText}>{name}</Text>
+  </Pressable>;
+}
 function Nav({ icon, label, press }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; press: () => void }) {
   return <Pressable accessibilityRole="button" onPress={press} style={styles.navItem}><Ionicons name={icon} size={21} color="#213347" /><Text style={styles.small}>{label}</Text></Pressable>;
 }
 const styles = StyleSheet.create({
+  brandIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: '#ffcd12', alignItems: 'center', justifyContent: 'center' },
+  search: { minHeight: 44, borderRadius: 12, backgroundColor: '#edf1f4', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
+  searchInput: { flex: 1, fontSize: 13, color: '#171815', paddingVertical: 8 },
+  bannerAction: { alignSelf: 'flex-start', marginTop: 10, borderRadius: 16, backgroundColor: '#ffcd12', paddingHorizontal: 11, paddingVertical: 6 },
+  sectionTitle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tiles: { flexDirection: 'row', justifyContent: 'space-between' },
+  tile: { flex: 1, alignItems: 'center', gap: 5, paddingVertical: 3 },
+  tileIcon: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  circle: { width: 42, height: 42, borderRadius: 21 },
+  tileSelected: { borderColor: '#594308' },
+  tileText: { fontSize: 11, fontWeight: '700', color: '#171815', textAlign: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: '3%', rowGap: 10 },
+  gridItem: { width: '31.3%', gap: 4, paddingBottom: 12 },
+  wideCover: { width: '100%', height: 95 },
   shell: { flex: 1, backgroundColor: '#fffdfa' },
   content: { width: '100%', maxWidth: 620, alignSelf: 'center', padding: 20, gap: 12, paddingBottom: 28 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
