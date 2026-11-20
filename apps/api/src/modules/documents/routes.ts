@@ -7,7 +7,7 @@ import { HttpError, fail } from '../../middlewares/errors.js';
 import { objectId } from '../../validation.js';
 import { schoolIdsInRegion } from '../academic/catalog.js';
 import type { User } from '../users/profile.js';
-import { serializeDoc } from './service.js';
+import { findAvailableDocuments, serializeDoc, serializeDocuments } from './service.js';
 import { listing } from './validation.js';
 
 const router = Router();
@@ -24,15 +24,16 @@ router.get('/documents', async (req, res) => {
     const ids = await models.users.find({ schoolId: { $in: schoolIdsInRegion(query.region) } }).distinct('_id');
     match.$and = [{ $or: [{ type: 'digital' }, { owner: { $in: ids.map(String) } }] }];
   }
-  res.json(await Promise.all((await models.docs.find(match).sort({ createdAt: -1 }).limit(60)).map(serializeDoc)));
+  const documents = await findAvailableDocuments(match, 60);
+  res.json(await Promise.all(documents.map(doc => serializeDoc(models.docs.hydrate(doc)))));
 });
 router.get('/documents/mine', async (req, res) => {
   const user = await auth(req);
-  res.json(await Promise.all((await models.docs.find({ owner: user.id }).sort({ createdAt: -1 })).map(serializeDoc)));
+  res.json(await serializeDocuments(await models.docs.find({ owner: user.id }).sort({ createdAt: -1 })));
 });
 router.get('/documents/saved', async (req, res) => {
   const user = await auth(req);
-  res.json(await Promise.all((await models.docs.find({ _id: { $in: user.saved }, status: 'approved' })).map(serializeDoc)));
+  res.json(await serializeDocuments(await models.docs.find({ _id: { $in: user.saved }, status: 'approved' })));
 });
 router.get('/documents/library', async (req, res) => {
   const user = await requireStudent(req);
@@ -48,7 +49,7 @@ router.get('/documents/library', async (req, res) => {
   const recent = opened.map(entry => entry._id);
   const ids = [...new Set([...saved, ...completed, ...recent])].filter(id => typeof id === 'string' && Types.ObjectId.isValid(id));
   const entries = await models.docs.find({ _id: { $in: ids }, status: 'approved' }).sort({ createdAt: -1 });
-  res.json({ rows: await Promise.all(entries.map(serializeDoc)), saved, acquired: completed, recent });
+  res.json({ rows: await serializeDocuments(entries), saved, acquired: completed, recent });
 });
 router.get('/documents/:id/pdf', async (req, res) => {
   const doc = await models.docs.findOne({ _id: objectId.parse(req.params.id), status: 'approved', type: 'digital' }).select('+pdf');
@@ -69,7 +70,8 @@ router.post('/documents/:id/open', async (req, res) => {
 });
 router.get('/documents/:id', async (req, res) => {
   const doc = await models.docs.findOne({ _id: objectId.parse(req.params.id), status: 'approved' }) || fail(404, 'Không tìm thấy tài liệu.');
-  res.json(await serializeDoc(doc));
+  const [detail] = await serializeDocuments([doc]);
+  res.json(detail);
 });
 router.post('/documents', async (req, res) => {
   const user = await requireStudent(req);

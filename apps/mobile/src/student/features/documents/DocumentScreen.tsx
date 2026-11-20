@@ -13,7 +13,7 @@ export function DocumentScreen({ page, desktop, doc, saved, onOpenPdf, onBook, o
   const seller = <>
     <View style={styles.detailPanel}>
       <Text style={styles.bold}>{price(doc)}</Text>
-      <Text style={styles.small}>{doc.type === 'sale' ? 'Trả trực tiếp khi nhận' : doc.type === 'points' ? 'Giữ điểm khi đặt hẹn' : 'Xem và tải miễn phí'}</Text>
+      <Text style={styles.small}>{doc.fulfilled ? 'Giao nhận đã hoàn tất.' : doc.type === 'sale' ? 'Trả trực tiếp khi nhận' : doc.type === 'points' ? 'Giữ điểm khi đặt hẹn' : 'Xem và tải miễn phí'}</Text>
     </View>
     {doc.owner && <Pressable accessibilityRole="button" accessibilityLabel={'Xem hồ sơ ' + doc.owner.name} style={styles.card} onPress={() => onProfile(doc.owner)}>
       <Avatar user={doc.owner} />
@@ -33,7 +33,7 @@ export function DocumentScreen({ page, desktop, doc, saved, onOpenPdf, onBook, o
       <View style={[styles.detailStack, desktop && styles.webSecondary]}>
         {desktop && seller}
         {doc.type === 'digital' ? <Button caption="Mở PDF miễn phí" onPress={onOpenPdf} /> :
-          doc.owner && <View style={styles.splitActions}><Button caption="Nhắn tin" alt fill onPress={() => onChat(doc.owner, doc)} /><Button fill caption={doc.type === 'sale' ? 'Đặt lịch · ' + price(doc) : 'Giữ chỗ · ' + price(doc)} onPress={onBook} /></View>}
+          doc.owner && <View style={styles.splitActions}><Button caption="Nhắn tin" alt fill onPress={() => onChat(doc.owner, doc)} />{!doc.fulfilled && <Button fill caption={doc.type === 'sale' ? 'Đặt lịch · ' + price(doc) : 'Giữ chỗ · ' + price(doc)} onPress={onBook} />}</View>}
         <Button caption={saved ? 'Bỏ lưu tài liệu' : 'Lưu tài liệu'} alt onPress={onSave} />
         <Button caption="Báo cáo tài liệu" alt onPress={onReport} />
       </View>

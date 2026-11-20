@@ -45,3 +45,4 @@ export const models = {
 };
 const claimedDeal = { $in: ['requested', 'scheduled', 'waiting', 'completed'] };
 models.deals.schema.index({ doc: 1 }, { unique: true, partialFilterExpression: { status: claimedDeal } });
+models.deals.schema.index({ doc: 1, status: 1 });

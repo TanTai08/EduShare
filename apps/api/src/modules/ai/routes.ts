@@ -4,6 +4,7 @@ import { models } from '../../models.js';
 import { auth } from '../../middlewares/auth.js';
 import { image, text } from '../../validation.js';
 import { findSchool, schoolIdsInRegion } from '../academic/catalog.js';
+import { findAvailableDocuments } from '../documents/service.js';
 import { aiReply } from './service.js';
 
 const router = Router();
@@ -22,9 +23,9 @@ router.post('/ai/chat', async (req, res) => {
   }).parse(req.body);
   const localRegion = findSchool(user.schoolId)?.region;
   const owners = await models.users.find({ schoolId: { $in: schoolIdsInRegion(localRegion) } }).distinct('_id');
-  const docs = await models.docs.find({
+  const docs = await findAvailableDocuments({
     status: 'approved', $or: [{ type: 'digital' }, { owner: { $in: owners.map(String) } }],
-  }).select('title subject category description type price').sort({ createdAt: -1 }).limit(100).lean();
+  }, 100, { title: 1, subject: 1, category: 1, description: 1, type: 1, price: 1 });
   const normalize = (value: string) => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd');
   const words = [...new Set(normalize(question).split(/\s+/).filter(word => word.length >= 3))];
   const ranked = docs.map(doc => {

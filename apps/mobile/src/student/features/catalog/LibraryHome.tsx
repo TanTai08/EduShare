@@ -2,7 +2,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View,
 import { Ionicons } from '@expo/vector-icons';
 import { listingLabels, type Listing, type ListingType } from '../../../../../../packages/contracts';
 import { WebButton, palette, type Glyph } from '../../Workspace';
-import type { LibraryData } from '../../models';
+import { price, type LibraryData } from '../../models';
 
 const types = {
   sale: { label: 'Mua bán', hint: 'Sách và giáo trình bản in', icon: 'bag-handle-outline', color: '#fff1bf' },
@@ -42,7 +42,7 @@ function Tile({ label, hint, icon, color, active, onPress }: {
 
 export function ListingCard({ item, onOpen, size, label }: { item: Listing; onOpen: () => void; size: ReturnType<typeof listingCardBasis>; label?: string }) {
   const color = covers[item.type];
-  const cost = item.type === 'digital' ? 'Miễn phí' : item.price.toLocaleString('vi-VN') + (item.type === 'sale' ? ' ₫' : ' điểm');
+  const cost = price(item);
   return <Pressable accessibilityRole="button" accessibilityLabel={label || item.title} onPress={onOpen}
     style={({ hovered, pressed }: { pressed: boolean; hovered?: boolean }) => [s.card, { flexBasis: size }, hovered && s.cardHover, pressed && s.pressed]}>
     <View style={[s.cardArt, { backgroundColor: color.background }]}>

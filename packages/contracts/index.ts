@@ -23,6 +23,7 @@ export type SessionUser = PublicUser & { points: number; saved: string[]; role: 
 export type Listing = {
   id: string; title: string; subject: string; category: string; description: string;
   type: ListingType; price: number; cover?: string; fileUrl?: string; fileName?: string; owner: PublicUser;
+  fulfilled?: boolean;
   status: 'pending' | 'approved' | 'revision' | 'rejected' | 'removed'; feedback?: string;
 };
 export const listingLabels: Record<ListingType, string> = {

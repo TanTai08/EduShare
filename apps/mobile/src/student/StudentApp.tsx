@@ -144,6 +144,14 @@ export default function EduShare() {
     return () => { alive = false; };
   }, [page, region, filter, catalogRefresh, me?.role]);
   useEffect(() => {
+    if (page !== 'detail' || doc.status !== 'approved' || doc.type === 'digital' || doc.fulfilled || doc.id.startsWith('sample')) return;
+    let active = true;
+    void api<Listing>('/documents/' + encodeURIComponent(doc.id)).then(latest => {
+      if (active && latest.fulfilled) setDoc(current => current.id === latest.id ? latest : current);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [api, page, doc.id, doc.type, doc.status, doc.fulfilled]);
+  useEffect(() => {
     if (!token || page !== 'chat') return;
     let alive = true;
     const refresh = () => void api<Message[]>('/chat/' + peer.id).then(rows => { if (alive) setMessages(rows); }).catch(() => {});
@@ -219,7 +227,12 @@ export default function EduShare() {
     setMessage(current => current.trim() === draft ? '' : current);
     setMessages(rows => rows.some(row => row._id === sent._id) ? rows : [...rows, sent]);
   }
+  const fulfilledIds = new Set(deals.filter(deal => deal.status === 'completed').map(deal => deal.doc));
+  function withAvailability(value: Listing) {
+    return !value.fulfilled && fulfilledIds.has(value.id) ? { ...value, fulfilled: true } : value;
+  }
   function bookListing() {
+    if (withAvailability(doc).fulfilled) { setNotice('Tài liệu đã được giao.'); return; }
     if (me && doc.owner.id === me.id) { setNotice('Đây là tài liệu của bạn.'); return; }
     if (me && doc.owner.region !== me.region) { setNotice('Tài liệu này giao nhận tại ' + doc.owner.region + '. Hãy chọn tài liệu cùng khu vực với trường của bạn.'); return; }
     setPlace(''); setAppointment(null); secured('appointment');
@@ -321,12 +334,13 @@ export default function EduShare() {
   });
   function card(value: Listing, press?: () => void) {
     return <Pressable key={value.id} style={styles.card} onPress={press || (() => showListing(value))}>
-      <Cover doc={value} /><View style={styles.flex}><Text style={styles.bold}>{value.title}</Text><Text style={styles.small}>{value.owner?.name}</Text><Text style={styles.small}>{value.owner?.school}</Text><Text style={styles.price}>{price(value)}</Text></View>
+      <Cover doc={value} /><View style={styles.flex}><Text style={styles.bold}>{value.title}</Text><Text style={styles.small}>{value.owner?.name}</Text><Text style={styles.small}>{value.owner?.school}</Text><Text style={styles.price}>{price(withAvailability(value))}</Text></View>
     </Pressable>;
   }
   function toggleFilter(value: ListingType) { setQ(''); setCategory(''); setFilter(current => current === value ? '' : value); }
   const keyword = desktop ? searchable(q.trim()) : q.toLowerCase();
   const matches = items.filter(item => {
+    if (item.fulfilled || fulfilledIds.has(item.id)) return false;
     const values = [item.title, item.subject, item.category, item.owner?.school];
     if (desktop) values.push(item.owner?.name);
     const matchesKeyword = values.some(value => (desktop ? searchable(value || '') : (value || '').toLowerCase()).includes(keyword));
@@ -401,7 +415,7 @@ export default function EduShare() {
       {page === 'notifications' && (deals.length ? deals.map(deal => <Pressable accessibilityRole="button" key={deal._id} style={styles.panel} onPress={() => { setSelectedDeal(deal._id); open('dealProgress'); }}>
         <Text style={styles.bold}>{status[deal.status]}</Text><Text>{deal.document?.title || 'Tài liệu'}</Text><Text style={styles.small}>{deal.counterparty?.name} · {deal.time}</Text>
       </Pressable>) : !moderationNotices.length && <Text>Chưa có thông báo.</Text>)}
-      {(page === 'detail' || page === 'pdfOpened') && <DocumentScreen page={page} desktop={desktop} doc={doc} saved={!!me?.saved.includes(doc.id)}
+      {(page === 'detail' || page === 'pdfOpened') && <DocumentScreen page={page} desktop={desktop} doc={withAvailability(doc)} saved={!!me?.saved.includes(doc.id)}
         onOpenPdf={openPdf} onBook={bookListing} onChat={startChat} onSave={saveListing} onReport={reportListing} onProfile={showPeer}
         onBackToDetail={() => { if (!back()) open('detail'); }} onHome={() => open('home')} />}
       {(page === 'appointment' || page === 'deals' || page === 'dealProgress' || page === 'review') && <DealsScreen page={page} desktop={desktop} doc={doc}
@@ -451,7 +465,7 @@ export default function EduShare() {
         change={setLibraryQuery} onOpen={showListing} onBrowse={() => open('home')} width={width} /> :
         list.length ? list.map(item => card(item)) : <Text>Chưa có tài liệu đã lưu.</Text>)}
       {page === 'mine' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
-        {card(item)}<Text>{status[item.status]}</Text>{!!item.feedback && <Text style={styles.small}>{item.feedback}</Text>}
+        {card(item)}{!withAvailability(item).fulfilled && <Text>{status[item.status]}</Text>}{!!item.feedback && <Text style={styles.small}>{item.feedback}</Text>}
         {item.status === 'revision' && <Button caption="Sửa và gửi lại" onPress={() => { setEditing(item.id); setPublishChecked(false); setAiFields([]); setType(item.type); setForm({ title: item.title, subject: item.subject, category: item.category, description: item.description, cover: item.cover || '', cost: String(item.price), fileUrl: item.fileUrl || '', fileName: item.fileName || '', pdf: '' }); open('publish'); }} />}
       </View>) : <Text>Chưa có bài đăng.</Text>)}
       {page === 'wallet' && <><View style={styles.hero}><Text style={styles.heading}>{points.balance} điểm khả dụng</Text></View>{points.entries.map(p => <View key={p._id} style={styles.panel}><Text style={styles.bold}>{p.amount > 0 ? '+' : ''}{p.amount} điểm</Text><Text>{p.reason}</Text></View>)}</>}
@@ -496,6 +510,10 @@ export default function EduShare() {
   </SafeAreaView>;
 
   async function act(id: string, action: string) {
-    await run(async () => { await api('/deals/' + id + '/action', 'POST', { action }); setDeals(await api<Deal[]>('/deals')); });
+    await run(async () => {
+      const result = await api<Deal>('/deals/' + id + '/action', 'POST', { action });
+      if (result.status === 'completed') libraryDirty.current = true;
+      setDeals(current => current.map(deal => deal._id === id ? { ...deal, ...result } : deal));
+    });
   }
 }
