@@ -1,191 +1,217 @@
-import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { listingLabels, type Listing, type ListingType } from '../../../../packages/contracts';
-import { WebButton, palette, panel, column, type Glyph } from './Workspace';
+import { WebButton, palette, type Glyph } from './Workspace';
 
 const types = {
-  sale: { label: 'Mua bán', hint: 'Giáo trình bản in tại trường', icon: 'bag-handle-outline', tone: '#fff0ba', ink: '#806211', stage: '#e8eef8', cover: '#182951' },
-  points: { label: 'Đổi điểm', hint: 'Đổi tri thức, nhận tài liệu', icon: 'swap-horizontal-outline', tone: '#dde9ff', ink: '#3e69a8', stage: '#eee8fa', cover: '#402568' },
-  digital: { label: 'Miễn phí', hint: 'Học thêm với PDF miễn phí', icon: 'download-outline', tone: '#ddf5e6', ink: '#16734c', stage: '#e1f2ed', cover: '#145352' },
-} satisfies Record<ListingType, { label: string; hint: string; icon: Glyph; tone: string; ink: string; stage: string; cover: string }>;
-const categories: { label: string; icon: Glyph; tone: string }[] = [
-  { label: 'Sách', icon: 'book-outline', tone: '#fcebc2' }, { label: 'Giáo trình', icon: 'document-text-outline', tone: '#dae9f1' },
-  { label: 'Slide', icon: 'easel-outline', tone: '#e9e2fa' }, { label: 'Đề thi', icon: 'clipboard-outline', tone: '#fce3df' },
-  { label: 'File PDF', icon: 'download-outline', tone: '#dfefe6' },
+  sale: { label: 'Mua bán', hint: 'Sách và giáo trình bản in', icon: 'bag-handle-outline', color: '#fff1bf' },
+  points: { label: 'Đổi điểm', hint: 'Dùng điểm nhận bản in', icon: 'swap-horizontal-outline', color: '#e6eeff' },
+  digital: { label: 'Miễn phí', hint: 'Đề thi, đề cương và PDF', icon: 'document-text-outline', color: '#e2f4e9' },
+} satisfies Record<ListingType, { label: string; hint: string; icon: Glyph; color: string }>;
+const categories: { label: string; icon: Glyph }[] = [
+  { label: 'Sách', icon: 'book-outline' }, { label: 'Giáo trình', icon: 'library-outline' },
+  { label: 'Slide', icon: 'easel-outline' }, { label: 'Đề thi', icon: 'clipboard-outline' },
+  { label: 'Đề cương', icon: 'list-outline' }, { label: 'File PDF', icon: 'document-outline' },
 ];
-
-export const cost = (item: Listing) => item.type === 'digital' ? 'Miễn phí' : item.price.toLocaleString('vi-VN') + (item.type === 'sale' ? ' ₫' : ' điểm');
-export const fold = (value: string) => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd');
-
-export function WebCover({ item, size = 'normal' }: { item: Listing; size?: 'normal' | 'small' | 'medium' | 'large' }) {
-  const tone = types[item.type];
-  const dimensions = size === 'large' ? s.coverLarge : size === 'small' ? s.coverSmall : size === 'medium' ? s.coverMedium : s.coverNormal;
-  return <View style={[s.coverFrame, dimensions, { backgroundColor: tone.cover }]}>
-    {item.cover ? <Image accessibilityLabel={'Bìa ' + item.title} source={{ uri: item.cover }} style={s.image} resizeMode="cover" /> : <>
-      <View style={[s.ring, { borderColor: tone.tone }]} /><View style={[s.innerRing, { borderColor: tone.tone }]} />
-      <Text style={[s.coverTag, { color: tone.tone }]}>{item.type === 'digital' ? 'PDF' : 'BẢN IN'}</Text>
-      <Text numberOfLines={3} style={[s.coverTitle, size === 'small' && s.tiny, size === 'large' && s.largeTitle]}>{item.title}</Text>
-    </>}
-  </View>;
+const covers: Record<ListingType, { background: string; light: string }> = {
+  sale: { background: '#fff0c5', light: '#8a650b' },
+  points: { background: '#e0f3e9', light: '#316151' },
+  digital: { background: '#eee8fb', light: '#584481' },
+};
+const heroFade = { backgroundImage: 'linear-gradient(90deg, #fff1c9 0%, rgba(255, 241, 201, 0) 100%)' } as ViewStyle;
+export function listingCardBasis(width: number) {
+  return width >= 1360 ? '23.8%' : width >= 1170 ? '32%' : '48.5%';
 }
-
 type Props = {
-  rows: Listing[]; status: 'loading' | 'ready' | 'error'; region: string; filter: ListingType | '';
+  rows: Listing[]; status: 'loading' | 'ready' | 'error'; width: number; region: string; filter: ListingType | '';
   keyword: string; category: string; onCategory: (value: string) => void; onFilter: (type: ListingType) => void;
-  onReset: () => void; onRetry: () => void; onRegion: () => void; onBrowse: () => void;
-  onCatalogLayout: (offset: number) => void; onOpen: (row: Listing) => void;
+  onReset: () => void; onRetry: () => void; onChat: () => void; onRegion: () => void;
+  onAssistant: () => void; onCatalogLayout: (offset: number) => void; onBrowse: () => void; onOpen: (row: Listing) => void;
 };
 
-export function LibraryHome({ rows, status, region, filter, keyword, category, onCategory, onFilter, onReset, onRetry, onRegion, onBrowse, onCatalogLayout, onOpen }: Props) {
-  const [showAll, setShowAll] = useState(false);
-  const filtered = !!(filter || category || keyword.trim());
-  const featured = showAll || filtered ? rows : rows.slice(0, 3);
-  function browse() { setShowAll(true); onBrowse(); }
+function Tile({ label, hint, icon, color, active, onPress }: {
+  label: string; hint: string; icon: Glyph; color: string; active?: boolean; onPress: () => void;
+}) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={active === undefined ? undefined : { selected: active }}
+    onPress={onPress} style={({ hovered, pressed }: { pressed: boolean; hovered?: boolean }) => [s.tile, hovered && s.tileHover, active && s.active, pressed && s.pressed]}>
+    <View style={[s.tileIcon, { backgroundColor: color }]}><Ionicons name={icon} size={21} color={palette.navy} /></View>
+    <View style={s.flex}><Text style={s.bold}>{label}</Text><Text numberOfLines={2} style={s.hint}>{hint}</Text></View>
+  </Pressable>;
+}
+
+export function ListingCard({ item, onOpen, size, label }: { item: Listing; onOpen: () => void; size: ReturnType<typeof listingCardBasis>; label?: string }) {
+  const color = covers[item.type];
+  const cost = item.type === 'digital' ? 'Miễn phí' : item.price.toLocaleString('vi-VN') + (item.type === 'sale' ? ' ₫' : ' điểm');
+  return <Pressable accessibilityRole="button" accessibilityLabel={label || item.title} onPress={onOpen}
+    style={({ hovered, pressed }: { pressed: boolean; hovered?: boolean }) => [s.card, { flexBasis: size }, hovered && s.cardHover, pressed && s.pressed]}>
+    <View style={[s.cardArt, { backgroundColor: color.background }]}>
+      {item.cover ? <Image source={{ uri: item.cover }} style={s.photo} resizeMode="cover" /> : <>
+        <View style={[s.artRing, { borderColor: color.light }]} /><View style={[s.artRingSmall, { borderColor: color.light }]} />
+        <View style={s.artCopy}><Text numberOfLines={1} style={[s.artCategory, { color: color.light }]}>{item.category}</Text>
+          <Text numberOfLines={2} style={s.artTitle}>{item.title}</Text></View>
+        <View style={s.artIcon}><Ionicons name={types[item.type].icon} size={25} color={color.light} /></View>
+      </>}
+    </View>
+    <View style={s.cardBody}>
+      {(item.cover || item.category) && <Text numberOfLines={1} style={s.cardCategory}>{item.cover ? item.category : listingLabels[item.type]}</Text>}
+      <Text numberOfLines={2} style={s.cardTitle}>{item.title}</Text>
+      <View style={s.owner}>
+        {item.owner?.avatar ? <Image source={{ uri: item.owner.avatar }} style={s.avatar} /> : <View style={s.avatar}>
+          <Text style={s.avatarText}>{item.owner?.name?.trim().slice(0, 1).toUpperCase() || '?'}</Text>
+        </View>}
+        <View style={s.flex}><Text numberOfLines={1} style={s.ownerName}>{item.owner?.name || 'Người đăng'}</Text>
+          {!!item.owner?.school && <Text numberOfLines={1} style={s.hint}>{item.owner.school}</Text>}</View>
+      </View>
+      <View style={s.cardFoot}><Text style={[s.cost, item.type === 'digital' && s.free]}>{cost}</Text>
+        <Ionicons name="arrow-forward" size={17} color={palette.navy} /></View>
+    </View>
+  </Pressable>;
+}
+
+export function LibraryHome({ rows, status, width, region, filter, keyword, category, onCategory, onFilter, onReset, onRetry, onChat, onRegion, onAssistant, onBrowse, onCatalogLayout, onOpen }: Props) {
+  const active = !!(filter || keyword.trim() || category);
+  const size = listingCardBasis(width);
   return <>
-    <View style={s.between}>
-      <Text accessibilityRole="header" aria-level={1} style={s.title}>Khám phá tài liệu cho bạn</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel={'Khu vực: ' + region} onPress={onRegion} style={s.row}>
-        <Text style={s.muted}>Khu vực: {region}</Text><Ionicons name="chevron-down" color={palette.muted} size={14} />
-      </Pressable>
-    </View>
-    {!filtered && <View style={s.two}>
-      <View style={[s.hero, { flex: 3 }]}>
-        <View style={s.heroText}>
-          <Text style={s.heroKicker}>HỌC CÙNG CỘNG ĐỒNG SINH VIÊN</Text>
-          <Text style={s.heroTitle}>Tủ tài liệu{'\n'}cho kỳ thi</Text>
-          <Text style={s.heroDescription}>Tìm đúng tài liệu. Chia sẻ tri thức. Cùng nhau tiến bộ.</Text>
-          <View style={s.start}><WebButton title="Khám phá ngay" icon="arrow-forward" primary onPress={browse} /></View>
+    {!active && <View style={s.heroGroup}>
+      <View style={s.hero}>
+        <Image accessibilityIgnoresInvertColors source={require('../../assets/library-hero.webp')} style={s.heroImage} resizeMode="cover" />
+        <View pointerEvents="none" style={[s.heroFade, heroFade]} />
+        <View style={s.heroCopy}>
+          <Text accessibilityRole="header" aria-level={1} style={s.heroTitle}>Tủ tài liệu{'\n'}cho kỳ thi</Text>
+          <Text style={s.heroText}>Tìm giáo trình, đề thi và slide từ cộng đồng sinh viên.</Text>
+          <View style={s.start}><WebButton title="Khám phá tài liệu" icon="arrow-forward" primary onPress={onBrowse} /></View>
         </View>
-        <Image source={require('../../assets/library-hero.webp')} resizeMode="cover" style={s.heroImage} />
       </View>
-      <View style={[panel, s.shortcuts]}>
-        <Text accessibilityRole="header" style={s.heading}>Bạn muốn làm gì hôm nay?</Text>
-        {(Object.keys(types) as ListingType[]).map(key => {
-          const item = types[key];
-          return <Pressable key={key} accessibilityRole="button" accessibilityLabel={item.label} onPress={() => onFilter(key)} style={s.row}>
-            <View style={[s.iconTile, { backgroundColor: item.tone }]}><Ionicons name={item.icon} size={19} color={item.ink} /></View>
-            <View style={s.flex}><Text style={s.bold}>{item.label}</Text><Text style={s.muted}>{item.hint}</Text></View>
-          </Pressable>;
-        })}
-      </View>
+      {width >= 1120 && <View style={s.side}>
+        <View style={s.sideIcon}><Ionicons name="sparkles-outline" color={palette.navy} size={23} /></View>
+        <Text accessibilityRole="header" style={s.sideTitle}>Trợ lý AI</Text>
+        <Text style={s.sideText}>Hỏi về tài liệu trong EduShare và tìm gợi ý theo môn học.</Text>
+        <View style={s.start}><WebButton title="Hỏi trợ lý" onPress={onAssistant} /></View>
+      </View>}
     </View>}
-    <View role="group" accessibilityLabel="Danh mục nổi bật" style={s.categoryRow}>
-      {categories.map(item => {
-        const active = item.label === 'File PDF' ? filter === 'digital' : category === item.label;
-        return <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ selected: active }}
-          style={[s.category, active && s.active]} onPress={() => item.label === 'File PDF' ? onFilter('digital') : onCategory(item.label)}>
-          <View style={[s.categoryIcon, { backgroundColor: item.tone }]}><Ionicons name={item.icon} size={19} color={palette.navy} /></View>
-          <Text style={s.bold}>{item.label}</Text>
+    <View style={s.shortcuts}>
+      {(Object.keys(types) as ListingType[]).map(type => <Tile key={type} {...types[type]} active={filter === type} onPress={() => onFilter(type)} />)}
+      <Tile label="Tin nhắn" hint="Trao đổi với người đăng" icon="chatbubbles-outline" color="#eee7ff" onPress={onChat} />
+    </View>
+    <View style={s.categories}>
+      <Text accessibilityRole="header" style={s.sectionTitle}>Danh mục</Text>
+      <View style={s.categoryRow}>{categories.map(item => {
+        const selected = item.label === 'File PDF' ? filter === 'digital' : item.label === category;
+        return <Pressable accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ selected }}
+          key={item.label} onPress={() => item.label === 'File PDF' ? onFilter('digital') : onCategory(item.label)}
+          style={({ hovered }: { pressed: boolean; hovered?: boolean }) => [s.categoryButton, hovered && s.tileHover, selected && s.active]}>
+          <Ionicons name={item.icon} size={16} color={palette.navy} /><Text style={s.bold}>{item.label}</Text>
         </Pressable>;
-      })}
+      })}</View>
     </View>
-    <View onLayout={event => onCatalogLayout(event.nativeEvent.layout.y)} style={s.between}>
-      <Text accessibilityRole="header" style={s.section}>{keyword.trim() ? 'Kết quả tìm kiếm' : category || (filter ? listingLabels[filter] : showAll ? 'Tất cả tài liệu' : 'Tài liệu nổi bật')}</Text>
-      {filtered ? <WebButton title="Xóa bộ lọc" onPress={onReset} /> : !showAll && <WebButton title="Xem tất cả" icon="arrow-forward" onPress={browse} />}
+    <View onLayout={event => onCatalogLayout(event.nativeEvent.layout.y)} style={s.catalogHeader}>
+      <View style={s.flex}>
+        <Text accessibilityRole="header" style={s.sectionTitle}>{keyword.trim() ? 'Kết quả tìm kiếm' : category || (filter ? listingLabels[filter] : 'Tài liệu nổi bật')}</Text>
+        {status === 'ready' && <Text aria-live="polite" style={s.hint}>{rows.length} tài liệu{keyword.trim() ? ' cho “' + keyword.trim() + '”' : ''}</Text>}
+      </View>
+      {active && <WebButton title="Xóa bộ lọc" icon="close-outline" onPress={onReset} />}
+      <WebButton title={region} icon="location-outline" onPress={onRegion} />
     </View>
-    {status === 'loading' ? <ActivityIndicator accessibilityLabel="Đang tải tài liệu" color={palette.navy} /> :
-      status === 'error' ? <View style={panel}><Text style={s.bold}>Chưa tải được danh sách tài liệu.</Text><WebButton title="Thử lại" onPress={onRetry} /></View> :
-      featured.length ? <View style={s.grid}>{featured.map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.title} onPress={() => onOpen(item)} style={s.listing}>
-        <View style={[s.stage, { backgroundColor: types[item.type].stage }]}><WebCover item={item} /></View>
-        <View style={s.cardCopy}><Text style={s.heading} numberOfLines={2}>{item.title}</Text><Text style={s.bold}>{item.owner?.name}</Text>
-          {!!item.owner?.school && <Text style={s.muted}>{item.owner.school}</Text>}
-          <Text style={[s.heading, item.type === 'digital' && s.free]}>{cost(item)}{item.type === 'points' ? ' · Nhận tại trường' : ''}</Text>
-        </View>
-      </Pressable>)}</View> : <View style={panel}><Text style={s.bold}>{filtered ? 'Chưa có tài liệu phù hợp.' : 'Chưa có tài liệu được duyệt.'}</Text></View>}
+    {status === 'loading' ? <View style={s.empty}><ActivityIndicator accessibilityLabel="Đang tải tài liệu" color={palette.navy} /></View> :
+      status === 'error' ? <View style={s.empty}><Ionicons name="cloud-offline-outline" size={27} color={palette.muted} />
+        <Text style={s.bold}>Chưa tải được danh sách tài liệu</Text><WebButton title="Thử lại" onPress={onRetry} /></View> :
+      rows.length ? <View style={s.cards}>{rows.map(item => <ListingCard key={item.id} item={item} size={size} onOpen={() => onOpen(item)} />)}</View> :
+      <View style={s.empty}><Ionicons name="folder-open-outline" size={27} color={palette.muted} />
+        <Text style={s.bold}>{active ? 'Chưa có tài liệu phù hợp' : 'Chưa có tài liệu được duyệt'}</Text>
+        <Text style={s.hint}>{active ? 'Thử từ khóa khác hoặc xóa bộ lọc.' : 'Tài liệu sẽ xuất hiện sau khi được duyệt.'}</Text></View>}
   </>;
 }
 
 export type LibraryData = { rows: Listing[]; saved: string[]; recent: string[]; acquired: string[] };
-const tabs = [
-  { id: '', label: 'Tất cả' }, { id: 'sale', label: 'Đã mua' }, { id: 'digital', label: 'Miễn phí' },
-  { id: 'points', label: 'Đổi điểm' }, { id: 'saved', label: 'Tài liệu đã lưu' },
-] as const;
-export function StudentLibrary({ data, selected, choose, query, change, onOpen, onBrowse }: {
-  data: LibraryData; selected: string; choose: (key: string) => void; query: string; change: (value: string) => void; onOpen: (row: Listing) => void; onBrowse: () => void;
+const libraryFilters = [
+  { key: '', label: 'Tất cả' }, { key: 'saved', label: 'Đã lưu' }, { key: 'sale', label: 'Đã mua' },
+  { key: 'digital', label: 'Miễn phí' }, { key: 'points', label: 'Đổi điểm' },
+];
+const normalize = (value: string) => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd');
+export function StudentLibrary({ data, selected, choose, query, change, onOpen, onBrowse, width }: {
+  data: LibraryData; selected: string; choose: (key: string) => void; query: string; change: (value: string) => void;
+  onOpen: (row: Listing) => void; onBrowse: () => void; width: number;
 }) {
-  const visible = data.rows.filter(item => (
-    (!selected || (selected === 'saved' ? data.saved.includes(item.id) : selected === item.type && (item.type === 'digital' || data.acquired.includes(item.id)))) &&
-    [item.title, item.subject, item.owner?.name || ''].some(value => fold(value || '').includes(fold(query.trim())))
-  ));
-  const recent = data.recent.map(id => data.rows.find(row => row.id === id)).filter((row): row is Listing => !!row).slice(0, 2);
-  return <View style={s.two}>
-    <View style={[panel, s.libraryMenu]}>
-      <Text accessibilityRole="header" style={s.heading}>Danh mục</Text>
-      {tabs.map(tab => <Pressable key={tab.id} accessibilityRole="button" accessibilityLabel={tab.label} accessibilityState={{ selected: selected === tab.id }} onPress={() => choose(tab.id)}
-        style={[s.menuRow, selected === tab.id && s.active]}><Text style={s.bold}>{tab.label}</Text></Pressable>)}
-      <View style={s.libraryTip}><Text style={s.bold}>Tủ sách luôn bên bạn</Text><Text style={s.muted}>Tìm lại tài liệu yêu thích và tiếp tục học bất cứ lúc nào.</Text></View>
+  const term = normalize(query.trim());
+  const rows = data.rows.filter(item => {
+    const match = !selected || (selected === 'saved' ? data.saved.includes(item.id) :
+      item.type === selected && (item.type === 'digital' || data.acquired.includes(item.id)));
+    return match && [item.title, item.subject, item.owner?.name].some(value => normalize(value || '').includes(term));
+  });
+  const byId = new Map(rows.map(row => [row.id, row]));
+  const recent = !selected && !term ? data.recent.flatMap(id => {
+    const row = byId.get(id);
+    return row ? [row] : [];
+  }).slice(0, 2) : [];
+  const size = listingCardBasis(width);
+  return <>
+    <View style={s.catalogHeader}>
+      {libraryFilters.map(item => <Pressable key={item.key} accessibilityRole="button" accessibilityState={{ selected: selected === item.key }}
+        onPress={() => choose(item.key)} style={[s.categoryButton, selected === item.key && s.active]}><Text style={s.bold}>{item.label}</Text></Pressable>)}
+      <TextInput accessibilityLabel="Tìm trong thư viện" placeholder="Tìm trong thư viện…" placeholderTextColor={palette.muted}
+        value={query} onChangeText={change} style={s.librarySearch} />
     </View>
-    <View style={[column, s.flex]}>
-      {!!recent.length && <>
-        <Text accessibilityRole="header" style={s.section}>Mở lại gần đây</Text>
-        <View style={s.two}>{recent.map((item, i) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={'Mở lại ' + item.title}
-          onPress={() => onOpen(item)} style={[s.recent, { backgroundColor: i ? '#e6edff' : palette.pale }]}>
-          <WebCover item={item} size="medium" /><View style={s.flex}><Text style={s.heading}>{item.title}</Text><Text style={s.muted}>{item.owner?.name}</Text>
-            <Text style={s.bold}>{cost(item)}</Text><Text style={s.muted}>Mở tài liệu →</Text></View>
-        </Pressable>)}</View>
-      </>}
-      <View style={s.between}><Text accessibilityRole="header" style={s.section}>{selected ? tabs.find(tab => tab.id === selected)?.label : 'Tất cả tài liệu'}</Text>
-        <TextInput accessibilityLabel="Tìm trong thư viện" value={query} onChangeText={change} placeholder="Tìm trong thư viện…" placeholderTextColor={palette.muted} style={s.input} /></View>
-      <View style={panel}>
-        {!!visible.length && <View style={s.libraryRow}><Text style={[s.flex, s.muted]}>TÀI LIỆU</Text><Text style={s.muted}>HÌNH THỨC</Text><Text style={s.muted}>THAO TÁC</Text></View>}
-        {visible.map(item => <View key={item.id} style={s.libraryRow}>
-          <WebCover item={item} size="small" />
-          <View style={s.flex}><Text style={s.bold}>{item.title}</Text><Text style={s.muted}>{item.owner?.name}</Text></View>
-          <Text style={[s.pill, { backgroundColor: types[item.type].tone }]}>{cost(item)}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={'Mở ' + item.title} onPress={() => onOpen(item)}><Text style={s.bold}>Mở tài liệu →</Text></Pressable>
-        </View>)}
-        {!visible.length && <><Text style={s.bold}>Chưa có tài liệu trong mục này.</Text><View style={s.start}><WebButton title="Khám phá tài liệu" onPress={onBrowse} /></View></>}
-      </View>
-    </View>
-  </View>;
+    {!!recent.length && <>
+      <Text accessibilityRole="header" style={s.sectionTitle}>Mở lại gần đây</Text>
+      <View style={s.cards}>{recent.map(item => <ListingCard key={item.id} item={item} label={'Mở lại ' + item.title} size={size} onOpen={() => onOpen(item)} />)}</View>
+    </>}
+    {rows.length ? <>
+      {!!recent.length && <Text accessibilityRole="header" style={s.sectionTitle}>Tất cả tài liệu</Text>}
+      <View style={s.cards}>{rows.map(item => <ListingCard key={item.id} item={item} size={size} onOpen={() => onOpen(item)} />)}</View>
+    </> : <View style={s.empty}><Ionicons name="bookmark-outline" size={26} color={palette.muted} />
+      <Text style={s.bold}>Chưa có tài liệu trong mục này.</Text><WebButton title="Khám phá tài liệu" onPress={onBrowse} /></View>}
+  </>;
 }
 
 const s = StyleSheet.create({
+  librarySearch: { minHeight: 37, paddingHorizontal: 12, minWidth: 166, flexGrow: 1, borderRadius: 9, backgroundColor: 'white', borderColor: palette.line, borderWidth: 1, color: palette.ink },
   flex: { flex: 1, minWidth: 0 },
-  title: { color: palette.ink, fontWeight: '800', fontSize: 31, letterSpacing: -0.5 },
-  section: { color: palette.ink, fontWeight: '800', fontSize: 22 },
-  heading: { fontSize: 17, color: palette.ink, fontWeight: '800' },
-  bold: { fontSize: 14, color: palette.ink, fontWeight: '700' },
-  muted: { fontSize: 13, color: palette.muted },
-  between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
-  two: { flexDirection: 'row', gap: 23, alignItems: 'flex-start' },
   start: { alignSelf: 'flex-start' },
-  row: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  hero: { minHeight: 292, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 14, padding: 30, borderRadius: 18, backgroundColor: palette.navy },
-  heroText: { flex: 1, minWidth: 0, gap: 14 },
-  heroKicker: { color: '#ffdd57', fontWeight: '800', fontSize: 12 },
-  heroTitle: { color: '#fff', fontSize: 40, fontWeight: '800', lineHeight: 44, letterSpacing: -0.6 },
-  heroDescription: { fontSize: 14, color: '#e0e8f1' },
-  heroImage: { width: '29%', height: 228, borderRadius: 14, backgroundColor: '#e8e0fc' },
-  shortcuts: { flex: 1, alignSelf: 'stretch', gap: 19 },
-  iconTile: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  categoryRow: { flexDirection: 'row', gap: 15 },
-  category: { flex: 1, minWidth: 0, backgroundColor: 'white', padding: 15, gap: 12, minHeight: 73, borderRadius: 13, flexDirection: 'row', alignItems: 'center' },
-  categoryIcon: { width: 39, height: 39, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  active: { backgroundColor: palette.pale },
-  grid: { flexDirection: 'row', columnGap: '1.8%', rowGap: 20, flexWrap: 'wrap' },
-  listing: { width: '32.13%', minWidth: 0, borderRadius: 14, overflow: 'hidden', backgroundColor: 'white' },
-  stage: { height: 165, justifyContent: 'center', alignItems: 'center' },
-  coverFrame: { overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start' },
-  coverNormal: { width: 154, height: 132, gap: 7, padding: 10 },
-  coverMedium: { width: 78, height: 99, gap: 5, padding: 7 },
-  coverSmall: { width: 48, height: 59, gap: 3, padding: 4 },
-  coverLarge: { width: '100%', aspectRatio: 1.12, gap: 7, padding: 13, maxWidth: 215 },
-  coverTag: { fontWeight: '800', fontSize: 9 },
-  coverTitle: { color: 'white', fontSize: 13, fontWeight: '800', width: '83%' },
-  tiny: { fontSize: 8, width: '100%' },
-  largeTitle: { fontSize: 17 },
-  image: { position: 'absolute', width: '100%', height: '100%' },
-  ring: { position: 'absolute', right: '-23%', top: '30%', width: '73%', aspectRatio: 1, borderRadius: 98, borderWidth: 1, opacity: 0.6 },
-  innerRing: { position: 'absolute', right: '-10%', top: '40%', width: '52%', aspectRatio: 1, borderRadius: 90, borderWidth: 1, opacity: 0.55 },
-  cardCopy: { gap: 6, padding: 18 },
-  free: { color: '#16734c' },
-  libraryMenu: { width: '18%', minWidth: 155, padding: 19 },
-  menuRow: { padding: 12, borderRadius: 8 },
-  libraryTip: { padding: 12, gap: 7, backgroundColor: palette.soft, borderRadius: 10 },
-  recent: { flex: 1, minWidth: 0, flexDirection: 'row', gap: 15, alignItems: 'center', borderRadius: 14, padding: 19 },
-  input: { backgroundColor: '#fff', minHeight: 41, paddingHorizontal: 13, borderRadius: 8, fontSize: 13, color: palette.ink },
-  libraryRow: { flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 46, paddingVertical: 5 },
-  pill: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 6, color: palette.ink, fontSize: 12 },
+  heroGroup: { flexDirection: 'row', gap: 15 },
+  hero: { flex: 1, minWidth: 0, minHeight: 222, borderRadius: 14, overflow: 'hidden', position: 'relative', backgroundColor: '#fff1c9', justifyContent: 'center' },
+  heroImage: { position: 'absolute', right: 0, top: 0, bottom: 0, height: '100%', width: '57%' },
+  heroFade: { position: 'absolute', left: '42.9%', top: 0, bottom: 0, width: '21%' },
+  heroCopy: { width: '47%', paddingVertical: 19, paddingHorizontal: 23, gap: 10, alignItems: 'flex-start' },
+  heroTitle: { fontSize: 31, lineHeight: 34, color: palette.ink, fontWeight: '900', letterSpacing: -0.8 },
+  heroText: { fontSize: 13, color: '#3c4958', lineHeight: 19 },
+  side: { flexBasis: 212, borderRadius: 14, backgroundColor: '#fff4ce', borderWidth: 1, borderColor: '#f4e3a1', padding: 16, gap: 8, justifyContent: 'center' },
+  sideIcon: { width: 42, height: 42, backgroundColor: '#ffdf67', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  sideTitle: { fontSize: 19, fontWeight: '900', color: palette.ink },
+  sideText: { fontSize: 13, lineHeight: 19, color: '#514b3e' },
+  shortcuts: { flexDirection: 'row', gap: 9 },
+  tile: { flex: 1, minWidth: 0, padding: 9, minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, backgroundColor: 'white', borderColor: palette.line, borderWidth: 1 },
+  tileHover: { backgroundColor: '#eef4fa', borderColor: '#c9d7e7' },
+  pressed: { opacity: 0.84 },
+  active: { backgroundColor: '#fff8dd', borderColor: '#edcc52' },
+  tileIcon: { width: 37, height: 37, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  bold: { color: palette.ink, fontSize: 13, fontWeight: '800' },
+  hint: { color: palette.muted, fontSize: 12, lineHeight: 17 },
+  categories: { gap: 9 },
+  categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  categoryButton: { minHeight: 37, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11,
+    backgroundColor: 'white', borderColor: palette.line, borderWidth: 1, borderRadius: 9 },
+  sectionTitle: { color: palette.ink, fontSize: 21, fontWeight: '900', letterSpacing: -0.3 },
+  catalogHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  cards: { flexDirection: 'row', flexWrap: 'wrap', columnGap: '1.5%', rowGap: 13 },
+  card: { minWidth: 0, borderRadius: 12, overflow: 'hidden', backgroundColor: 'white', borderColor: palette.line, borderWidth: 1 },
+  cardHover: { borderColor: '#a9bcd4', shadowColor: palette.navy, shadowOpacity: 0.13, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } },
+  cardArt: { height: 123, position: 'relative', justifyContent: 'center', overflow: 'hidden' },
+  photo: { height: '100%', width: '100%' },
+  artRing: { position: 'absolute', width: 138, height: 138, borderRadius: 69, borderWidth: 1, right: -30, top: -5, opacity: 0.45 },
+  artRingSmall: { position: 'absolute', width: 94, height: 94, borderRadius: 47, borderWidth: 1, right: -8, top: 17, opacity: 0.45 },
+  artCopy: { width: '72%', paddingLeft: 15, gap: 5 },
+  artCategory: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
+  artTitle: { fontSize: 16, lineHeight: 20, fontWeight: '900', color: palette.ink },
+  artIcon: { position: 'absolute', right: 14, bottom: 13 },
+  cardBody: { padding: 12, gap: 7, flex: 1 },
+  cardCategory: { color: palette.muted, fontSize: 11, fontWeight: '700' },
+  cardTitle: { color: palette.ink, fontSize: 14, lineHeight: 18, fontWeight: '900', minHeight: 36 },
+  owner: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  ownerName: { color: palette.ink, fontSize: 12, fontWeight: '700' },
+  avatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e5edfa' },
+  avatarText: { fontSize: 11, fontWeight: '800', color: palette.navy },
+  cardFoot: { marginTop: 'auto', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderColor: palette.line, paddingTop: 8 },
+  cost: { color: '#805b08', fontSize: 14, fontWeight: '900' },
+  free: { color: '#196846' },
+  empty: { gap: 8, padding: 24, borderRadius: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: palette.line, alignItems: 'center' },
 });
