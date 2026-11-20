@@ -1,6 +1,6 @@
 import type { Listing, PublicUser } from '../../../../packages/contracts';
 
-export type Api = <T>(path: string, method?: string, data?: unknown) => Promise<T>;
+export type { Api } from '../services/api';
 export type Member = Partial<PublicUser> & { id: string; name: string; email: string; role: string; status: string; createdAt?: string };
 export type AccountDetail = Member & { posts: number; deals: number; rating?: number; reviewCount: number };
 export type Post = Omit<Listing, 'owner'> & { owner: PublicUser | null; createdAt?: string; submittedAt?: string;

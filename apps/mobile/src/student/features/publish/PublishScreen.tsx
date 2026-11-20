@@ -1,9 +1,9 @@
 import { Image, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { listingLabels, type ListingType } from '../../../../packages/contracts';
-import { Button, Field } from './ui';
-import { styles } from './styles';
-import { money, type blank } from './models';
+import { listingLabels, type ListingType } from '../../../../../../packages/contracts';
+import { Button, Field } from '../../ui';
+import { styles } from '../../styles';
+import { money, type blank } from '../../models';
 
 export function PublishScreen({ page, desktop, form, aiFields, type, formField, chooseType, onCover, onReadCover, onPickPdf, onPdfUrl,
   onPreview, onSubmit, onEdit, onMine }: {

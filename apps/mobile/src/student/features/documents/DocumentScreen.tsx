@@ -1,9 +1,9 @@
 import { Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { Listing, PublicUser } from '../../../../packages/contracts';
-import { Avatar, Button, Cover } from './ui';
-import { styles } from './styles';
-import { price } from './models';
+import type { Listing, PublicUser } from '../../../../../../packages/contracts';
+import { Avatar, Button, Cover } from '../../ui';
+import { styles } from '../../styles';
+import { price } from '../../models';
 
 export function DocumentScreen({ page, desktop, doc, saved, onOpenPdf, onBook, onChat, onSave, onReport, onProfile, onBackToDetail, onHome }: {
   page: 'detail' | 'pdfOpened'; desktop: boolean; doc: Listing; saved: boolean;

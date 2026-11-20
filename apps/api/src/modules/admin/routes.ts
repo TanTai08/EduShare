@@ -1,24 +1,20 @@
-import type { Express, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import mongoose from 'mongoose';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { z } from 'zod';
-import { schools } from '../../../packages/contracts/index.js';
-import { models } from './models.js';
+import { models } from '../../models.js';
+import { requireAdmin } from '../../middlewares/auth.js';
+import { fail } from '../../middlewares/errors.js';
+import { objectId, schoolId } from '../../validation.js';
+import { schools } from '../academic/catalog.js';
+import { hashToken } from '../auth/session.js';
+import { credentials } from '../auth/validation.js';
+import { serializeDoc } from '../documents/service.js';
+import { delta } from '../points/service.js';
+import { publicUser } from '../users/profile.js';
 
 type User = InstanceType<typeof models.users>;
 type Doc = InstanceType<typeof models.docs>;
-type Dependencies = {
-  requireAdmin: (req: Request) => Promise<User>;
-  fail: (status: number, message: string) => never;
-  hash: (value: string) => string;
-  objectId: z.ZodType<string>;
-  schoolId: z.ZodType<string>;
-  credentials: z.ZodObject<{ email: z.ZodType<string>; password: z.ZodType<string> }>;
-  publicUser: (user: User) => { id: string; name?: string | null; school?: string; region?: string; avatar?: string | null };
-  serializeDoc: (doc: Doc) => Promise<{ id: string }>;
-  delta: (user: string, key: string, amount: number, reason: string, session: mongoose.ClientSession) => Promise<void>;
-};
-
 const day = 86_400_000;
 const highPriority = /bản quyền|lừa đảo|copyright|fraud/i;
 const accountStates = ['active', 'restricted', 'locked'] as const;
@@ -55,7 +51,8 @@ async function audit(actor: string, target: string, kind: string, action: string
   await models.moderationLog.create([{ actor, target, kind, action, note: message }], { session });
 }
 
-export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId, schoolId, credentials, publicUser, delta, serializeDoc }: Dependencies) {
+export function createAdminRouter() {
+  const router = Router();
   async function decidePost(actor: string, id: string, decision: string, feedback: string, session: mongoose.ClientSession) {
     const doc = await models.docs.findOneAndUpdate({ _id: id, status: 'pending' }, {
       status: decision, feedback, ...(decision === 'approved' && { approvedAt: new Date() }),
@@ -77,12 +74,12 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     res.json({ ok: true });
   }
 
-  app.get('/moderation', async (req, res) => {
+  router.get('/moderation', async (req, res) => {
     await requireAdmin(req);
     res.json(await Promise.all((await models.docs.find({ status: 'pending' }).limit(50)).map(serializeDoc)));
   });
-  app.post('/moderation/:id', (req, res) => decide(req, res, true));
-  app.post('/admin/posts/bulk-approve', async (req, res) => {
+  router.post('/moderation/:id', (req, res) => decide(req, res, true));
+  router.post('/admin/posts/bulk-approve', async (req, res) => {
     const admin = await requireAdmin(req);
     const ids = [...new Set(z.object({ ids: z.array(objectId).min(1).max(25) }).parse(req.body).ids)];
     await mongoose.connection.transaction(async session => {
@@ -90,9 +87,9 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     });
     res.json({ ok: true });
   });
-  app.post('/admin/posts/:id/decision', (req, res) => decide(req, res));
+  router.post('/admin/posts/:id/decision', (req, res) => decide(req, res));
 
-  app.get('/admin/posts', async (req, res) => {
+  router.get('/admin/posts', async (req, res) => {
     await requireAdmin(req);
     const query = z.object({ ...paging, status: z.enum(postStates).optional(), category: z.string().max(70).optional(),
       type: z.enum(['digital', 'sale', 'points']).optional() }).parse(req.query);
@@ -109,14 +106,14 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     ]);
     res.json({ rows: await Promise.all(rows.map(serializeDoc)), total });
   });
-  app.get('/admin/posts/:id', async (req, res) => {
+  router.get('/admin/posts/:id', async (req, res) => {
     await requireAdmin(req);
     const doc = await models.docs.findById(objectId.parse(req.params.id)) || fail(404, 'Không tìm thấy bài đăng.');
     const history = await models.moderationLog.find({ target: doc.id, $or: [{ kind: 'post' }, { kind: 'report', action: 'remove' }] })
       .sort({ createdAt: -1 }).limit(20).select('action note createdAt');
     res.json({ ...await serializeDoc(doc), history });
   });
-  app.post('/admin/posts/:id/preview', async (req, res) => {
+  router.post('/admin/posts/:id/preview', async (req, res) => {
     const admin = await requireAdmin(req);
     const doc = await models.docs.findById(objectId.parse(req.params.id)).select('fileUrl fileName') || fail(404, 'Không tìm thấy bài đăng.');
     if (doc.fileUrl) {
@@ -125,13 +122,13 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     }
     if (!doc.fileName || !await models.docs.exists({ _id: doc.id, pdf: { $exists: true } })) return fail(404, 'Bài đăng không đính kèm PDF.');
     const token = randomBytes(32).toString('hex');
-    await models.previews.create({ hash: hash(token), doc: doc.id, user: admin.id,
-      session: hash(req.get('authorization')!.slice(7)), expires: new Date(Date.now() + 60_000) });
+    await models.previews.create({ hash: hashToken(token), doc: doc.id, user: admin.id,
+      session: hashToken(req.get('authorization')!.slice(7)), expires: new Date(Date.now() + 60_000) });
     res.json({ path: '/admin/previews/' + token });
   });
-  app.get('/admin/previews/:token', async (req, res) => {
+  router.get('/admin/previews/:token', async (req, res) => {
     const key = z.string().regex(/^[a-f0-9]{64}$/).parse(req.params.token);
-    const preview = await models.previews.findOne({ hash: hash(key), expires: { $gt: new Date() } }) || fail(404, 'Liên kết xem thử đã hết hạn.');
+    const preview = await models.previews.findOne({ hash: hashToken(key), expires: { $gt: new Date() } }) || fail(404, 'Liên kết xem thử đã hết hạn.');
     const [valid, admin, doc] = await Promise.all([
       models.tokens.exists({ hash: preview.session, user: preview.user, expires: { $gt: new Date() } }),
       models.users.exists({ _id: preview.user, role: 'admin', status: { $ne: 'locked' } }),
@@ -145,7 +142,7 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
   function userRow(user: User) {
     return { ...publicUser(user), email: user.email, role: user.role || 'student', status: accountState(user.status), createdAt: user.createdAt };
   }
-  app.get('/admin/users', async (req, res) => {
+  router.get('/admin/users', async (req, res) => {
     await requireAdmin(req);
     const query = z.object({ ...paging, status: z.enum(accountStates).optional(), role: z.enum(['student', 'admin']).optional() }).parse(req.query);
     const { role, status, q, limit, order } = query;
@@ -164,7 +161,7 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     const users = rows.map(userRow);
     res.json(legacy ? users : { rows: users, total });
   });
-  app.get('/admin/users/:id', async (req, res) => {
+  router.get('/admin/users/:id', async (req, res) => {
     await requireAdmin(req);
     const id = objectId.parse(req.params.id);
     const user = await models.users.findById(id).select('-password -saved') || fail(404, 'Không tìm thấy người dùng.');
@@ -175,7 +172,7 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     ]);
     res.json({ ...userRow(user), posts, deals, rating: reviews[0]?.average, reviewCount: reviews[0]?.count ?? 0 });
   });
-  app.post('/admin/users', async (req, res) => {
+  router.post('/admin/users', async (req, res) => {
     const admin = await requireAdmin(req);
     const input = credentials.extend({ name: z.string().trim().min(1).max(90), schoolId }).parse(req.body);
     const salt = randomBytes(16).toString('hex');
@@ -187,7 +184,7 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     });
     res.status(201).json(userRow(user));
   });
-  app.patch('/admin/users/:id/status', async (req, res) => {
+  router.patch('/admin/users/:id/status', async (req, res) => {
     const admin = await requireAdmin(req);
     const id = objectId.parse(req.params.id);
     const { status, reason } = z.object({ status: z.enum(accountStates), reason: z.string().trim().min(1).max(500) }).parse(req.body);
@@ -206,7 +203,7 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     res.json({ ok: true });
   });
 
-  app.get('/admin/reports', async (req, res) => {
+  router.get('/admin/reports', async (req, res) => {
     await requireAdmin(req);
     const query = z.object({ ...paging, status: z.enum(['pending', 'reviewing', 'resolved']).default('pending'),
       priority: z.enum(['high', 'normal']).optional() }).parse(req.query);
@@ -232,7 +229,7 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
       priority: highPriority.test(report.reason || '') ? 'high' : 'normal', image: report.image }));
     res.json(legacy ? rows : { rows, total });
   });
-  app.get('/admin/reports/:id', async (req, res) => {
+  router.get('/admin/reports/:id', async (req, res) => {
     await requireAdmin(req);
     const report = await models.reports.findById(objectId.parse(req.params.id)) || fail(404, 'Không tìm thấy báo cáo.');
     const [reporter, doc] = await Promise.all([models.users.findById(report.user), models.docs.findById(report.doc)]);
@@ -261,10 +258,10 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     });
     res.json({ ok: true });
   }
-  app.post('/admin/reports/:id/decision', (req, res) => resolveReport(req, res));
-  app.post('/admin/reports/:id/resolve', (req, res) => resolveReport(req, res, true));
+  router.post('/admin/reports/:id/decision', (req, res) => resolveReport(req, res));
+  router.post('/admin/reports/:id/resolve', (req, res) => resolveReport(req, res, true));
 
-  app.get('/admin/overview', async (req, res) => {
+  router.get('/admin/overview', async (req, res) => {
     await requireAdmin(req);
     const { from: today } = dateRange(1, new Date());
     const [users, restricted, locked, approved, pending, pendingToday, revision, reports, reviewing, high, categories] = await Promise.all([
@@ -279,7 +276,7 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
     res.json({ users, active: users - restricted - locked, restricted, locked, approved, pending, pendingToday, revision, reports, reviewing, high, categories: categories.filter(Boolean).sort() });
   });
 
-  app.get('/admin/stats', async (req, res) => {
+  router.get('/admin/stats', async (req, res) => {
     await requireAdmin(req);
     const { days } = z.object({ days: z.coerce.number().int().min(1).max(90).default(7) }).parse(req.query);
     const { from, to, timeZone } = dateRange(days, new Date());
@@ -325,4 +322,5 @@ export function registerAdmin(app: Express, { requireAdmin, fail, hash, objectId
       averageHours: metrics[0]?.hours ?? null, firstApproval: approvedCount ? Math.max(0, approvedCount - approvedAfterRevision) / approvedCount : null,
     });
   });
+  return router;
 }

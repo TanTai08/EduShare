@@ -2,9 +2,9 @@ import type { Dispatch, SetStateAction } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { schools } from '../../../../packages/contracts';
-import { palette } from './Workspace';
-import { styles } from './styles';
+import { schools } from '../../../../../../packages/contracts';
+import { palette } from '../../Workspace';
+import { styles } from '../../styles';
 
 export function AuthScreen({ page, desktop, open, leaveAuth, name, setName, email, setEmail, password, setPassword, confirmation, setConfirmation,
   schoolsOpen, setSchoolsOpen, schoolId, setSchool, notice, busy, authenticate }: {
@@ -20,7 +20,7 @@ export function AuthScreen({ page, desktop, open, leaveAuth, name, setName, emai
   return <SafeAreaView style={[authStyles.shell, !welcome && authStyles.yellow, desktop && styles.webShell]} edges={['top']}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[authStyles.scroll, desktop && authStyles.webAuth]}>
       {desktop && <View style={authStyles.webArt}>
-        <Image source={require('../../assets/library-hero.webp')} style={authStyles.webArtImage} resizeMode="cover" />
+        <Image source={require('../../../../assets/library-hero.webp')} style={authStyles.webArtImage} resizeMode="cover" />
         <View style={authStyles.webArtText}><View style={styles.brandIcon}><Ionicons name="book-outline" size={18} color={palette.navy} /></View>
           <Text style={authStyles.webBrand}>EduShare</Text>
           <Text style={authStyles.webDescription}>Tài liệu học tập cho sinh viên</Text>

@@ -1,8 +1,8 @@
 import { Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AccountRow, Avatar, Button, Field } from './ui';
-import { styles } from './styles';
-import type { User } from './models';
+import { AccountRow, Avatar, Button, Field } from '../../ui';
+import { styles } from '../../styles';
+import type { User } from '../../models';
 
 export function AccountScreen({ page, desktop, me, avatar, profileName, setProfileName, onEdit, onSaved, onMine, onDeals, onWallet,
   onLogout, onPickAvatar, onSaveProfile }: {

@@ -1,10 +1,10 @@
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { Listing, PublicUser } from '../../../../packages/contracts';
-import { Avatar, Cover, Field } from './ui';
-import { styles } from './styles';
-import { WebButton } from './Workspace';
-import { price, type Deal, type Message, type User } from './models';
+import type { Listing, PublicUser } from '../../../../../../packages/contracts';
+import { Avatar, Cover, Field } from '../../ui';
+import { styles } from '../../styles';
+import { WebButton } from '../../Workspace';
+import { price, type Deal, type Message, type User } from '../../models';
 
 export function MessagingScreen({ page, desktop, contactQuery, setContactQuery, visibleContacts, startChat, showPeer, peer, chatDocument,
   onOpen, relatedDeal, onDeal, messages, me, message, setMessage, busy, onSend }: {

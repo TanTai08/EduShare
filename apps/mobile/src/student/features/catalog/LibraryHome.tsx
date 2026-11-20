@@ -1,8 +1,8 @@
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { listingLabels, type Listing, type ListingType } from '../../../../packages/contracts';
-import { WebButton, palette, type Glyph } from './Workspace';
-import type { LibraryData } from './models';
+import { listingLabels, type Listing, type ListingType } from '../../../../../../packages/contracts';
+import { WebButton, palette, type Glyph } from '../../Workspace';
+import type { LibraryData } from '../../models';
 
 const types = {
   sale: { label: 'Mua bán', hint: 'Sách và giáo trình bản in', icon: 'bag-handle-outline', color: '#fff1bf' },
@@ -75,7 +75,7 @@ export function LibraryHome({ rows, status, width, region, filter, keyword, cate
   return <>
     {!active && <View style={s.heroGroup}>
       <View style={s.hero}>
-        <Image accessibilityIgnoresInvertColors source={require('../../assets/library-hero.webp')} style={s.heroImage} resizeMode="cover" />
+        <Image accessibilityIgnoresInvertColors source={require('../../../../assets/library-hero.webp')} style={s.heroImage} resizeMode="cover" />
         <View pointerEvents="none" style={[s.heroFade, heroFade]} />
         <View style={s.heroCopy}>
           <Text accessibilityRole="header" aria-level={1} style={s.heroTitle}>Tủ tài liệu{'\n'}cho kỳ thi</Text>

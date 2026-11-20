@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LabeledField, TextButton } from '../components/FormControls';
 import { labels, number, type Post, type Stats } from './models';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -13,12 +14,13 @@ export function Icon({ name, size = 19, color = colors.navy }: { name: IconName;
 export function Action({ label, onPress, icon, kind = 'plain', disabled = false }: {
   label: string; onPress: () => void; icon?: IconName; kind?: 'plain' | 'strong' | 'danger' | 'text'; disabled?: boolean;
 }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => [
-    s.action, kind === 'strong' && s.strong, kind === 'danger' && s.danger, kind === 'text' && s.textAction,
-    (disabled || pressed) && { opacity: disabled ? 0.45 : 0.72 },
-  ]}>{icon && <Icon name={icon} size={16} color={kind === 'danger' ? colors.red : colors.navy} />}
-    <Text style={[s.actionText, kind === 'danger' && { color: colors.red }]}>{label}</Text>
-  </Pressable>;
+  return <TextButton label={label} accessibilityLabel={label} disabled={disabled} onPress={onPress}
+    leading={icon && <Icon name={icon} size={16} color={kind === 'danger' ? colors.red : colors.navy} />}
+    labelStyle={[s.actionText, kind === 'danger' && { color: colors.red }]}
+    style={({ pressed }) => [
+      s.action, kind === 'strong' && s.strong, kind === 'danger' && s.danger, kind === 'text' && s.textAction,
+      (disabled || pressed) && { opacity: disabled ? 0.45 : 0.72 },
+    ]} />;
 }
 export function Panel({ children, title, subtitle, action }: { children: ReactNode; title?: string; subtitle?: string; action?: ReactNode }) {
   return <View style={s.panel}>
@@ -55,9 +57,9 @@ export function Search({ value, onChange, placeholder, onSubmit }: { value: stri
     returnKeyType="search" onSubmitEditing={onSubmit} style={s.searchInput} /></View>;
 }
 export function Field({ label, value, onChange, multiline, secret }: { label: string; value: string; onChange: (text: string) => void; multiline?: boolean; secret?: boolean }) {
-  return <View style={s.field}><Text style={s.bold}>{label}</Text><TextInput accessibilityLabel={label} placeholder={label}
+  return <LabeledField label={label} labelStyle={s.bold} fieldStyle={s.field}
     placeholderTextColor={colors.muted} value={value} onChangeText={onChange} multiline={multiline} secureTextEntry={secret}
-    autoCapitalize={secret ? 'none' : 'sentences'} style={[s.input, multiline && s.multiline]} /></View>;
+    autoCapitalize={secret ? 'none' : 'sentences'} style={[s.input, multiline && s.multiline]} />;
 }
 export function Choices({ options, selected, choose }: { options: { key: string; label: string }[]; selected: string; choose: (key: string) => void }) {
   return <View style={s.wrap}>{options.map(({ key, label }) => <Pressable key={key} accessibilityRole="button"

@@ -1,1 +1,16 @@
-{"name":"edushare","private":true,"workspaces":["apps/*","packages/*"],"scripts":{"api":"npm run dev -w @edushare/api","mobile":"npm run start -w @edushare/mobile","web":"npm run web -w @edushare/mobile","check":"npm run check --workspaces --if-present","seed:demo":"npm run seed:demo -w @edushare/api"}}
+{
+  "name": "edushare",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "api": "npm run dev -w @edushare/api",
+    "mobile": "npm run start -w @edushare/mobile",
+    "web": "npm run web -w @edushare/mobile",
+    "check": "npm run check --workspaces --if-present",
+    "seed:demo": "npm run seed:demo -w @edushare/api",
+    "test": "npm run test -w @edushare/api"
+  }
+}

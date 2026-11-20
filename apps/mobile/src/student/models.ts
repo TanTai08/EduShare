@@ -1,8 +1,8 @@
-import type { Listing, PublicUser } from '../../../../packages/contracts';
+import type { Listing, PublicUser, SessionUser } from '../../../../packages/contracts';
 
 export type LibraryData = { rows: Listing[]; saved: string[]; recent: string[]; acquired: string[] };
 
-export type User = PublicUser & { points: number; saved: string[]; role: 'student' | 'admin' };
+export type User = SessionUser;
 export type ModerationNotice = { id: string; title: string; action: string; note?: string; createdAt: string };
 export type AiTurn = { question: string; answer: string; sources: { id: string; title: string }[] };
 export type Deal = { _id: string; buyer: string; seller: string; type: string; price: number; time: string; location: string; status: string; confirmations: string[]; counterparty?: PublicUser; document?: { title: string; cover?: string } };

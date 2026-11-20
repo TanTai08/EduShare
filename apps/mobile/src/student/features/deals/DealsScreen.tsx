@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
-import type { Listing, PublicUser } from '../../../../packages/contracts';
-import { Button, Avatar, Field } from './ui';
-import { styles } from './styles';
-import { WebButton } from './Workspace';
-import { money, price, status, type Deal, type User } from './models';
+import type { Listing, PublicUser } from '../../../../../../packages/contracts';
+import { Button, Avatar, Field } from '../../ui';
+import { styles } from '../../styles';
+import { WebButton } from '../../Workspace';
+import { money, price, status, type Deal, type User } from '../../models';
 
 export function DealsScreen({ page, desktop, doc, listingCard, place, setPlace, time, setTime, onBook, dealFilter, setDealFilter, visibleDeals, deals,
   selectedDeal, onSelectDeal, showPeer, startChat, me, act, onReview, rating, setRating, message, setMessage, onReviewSubmit }: {

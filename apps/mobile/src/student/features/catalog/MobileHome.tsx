@@ -1,9 +1,9 @@
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { listingLabels, type Listing, type ListingType } from '../../../../packages/contracts';
-import { Button, Cover, HomeTile } from './ui';
-import { styles } from './styles';
-import { price } from './models';
+import { listingLabels, type Listing, type ListingType } from '../../../../../../packages/contracts';
+import { Button, Cover, HomeTile } from '../../ui';
+import { styles } from '../../styles';
+import { price } from '../../models';
 
 export function MobileHome({ q, setQ, filter, setFilter, toggleFilter, catalogState, matches, region, onNotifications, onChat, onRetry, onOpen, onRegion, onAssistant }: {
   q: string; setQ: (value: string) => void; filter: ListingType | ''; setFilter: (value: ListingType | '') => void; toggleFilter: (type: ListingType) => void;

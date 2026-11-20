@@ -1,13 +1,16 @@
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Listing, PublicUser } from '../../../../packages/contracts';
+import { LabeledField, TextButton } from '../components/FormControls';
 import { styles } from './styles';
 
 export function Button({ caption, onPress, alt = false, fill = false }: { caption: string; onPress: () => void; alt?: boolean; fill?: boolean }) {
-  return <Pressable accessibilityRole="button" onPress={onPress} style={[styles.button, alt && styles.alt, fill && styles.flex]}><Text style={styles.bold}>{caption}</Text></Pressable>;
+  return <TextButton label={caption} labelStyle={styles.bold} onPress={onPress}
+    style={[styles.button, alt && styles.alt, fill && styles.flex]} />;
 }
 export function Field({ label, value, change, secret = false }: { label: string; value: string; change: (s: string) => void; secret?: boolean }) {
-  return <View style={styles.field}><Text style={styles.small}>{label}</Text><TextInput accessibilityLabel={label} placeholder={label} autoCapitalize="none" secureTextEntry={secret} value={value} onChangeText={change} style={styles.input} /></View>;
+  return <LabeledField label={label} labelStyle={styles.small} fieldStyle={styles.field}
+    autoCapitalize="none" secureTextEntry={secret} value={value} onChangeText={change} style={styles.input} />;
 }
 export function Avatar({ user, large = false }: { user: PublicUser; large?: boolean }) {
   return user.avatar ? <Image source={{ uri: user.avatar }} style={[styles.avatar, large && styles.largeAvatar]} /> : <View style={[styles.avatar, large && styles.largeAvatar]}><Text style={styles.bold}>{user.name.slice(0, 1)}</Text></View>;

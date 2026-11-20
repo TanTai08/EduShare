@@ -8,6 +8,7 @@ export const schools = [
 export type ListingType = 'digital' | 'sale' | 'points';
 export type DealStatus = 'requested' | 'scheduled' | 'waiting' | 'completed' | 'cancelled';
 export type PublicUser = { id: string; name: string; school: string; region: string; avatar?: string };
+export type SessionUser = PublicUser & { points: number; saved: string[]; role: 'student' | 'admin' };
 export type Listing = {
   id: string; title: string; subject: string; category: string; description: string;
   type: ListingType; price: number; cover?: string; fileUrl?: string; fileName?: string; owner: PublicUser;

@@ -19,6 +19,36 @@ code .
 
 Nếu chưa bật lệnh `code`, dùng **File → Open Folder** trong VS Code để mở thư mục EduShare.
 
+## Cấu trúc mã nguồn
+
+```text
+EduShare/
+├── apps/
+│   ├── api/
+│   │   ├── src/
+│   │   │   ├── app.ts          # Express, middleware và đăng ký route
+│   │   │   ├── server.ts       # Khởi động API và kết nối MongoDB
+│   │   │   ├── config/
+│   │   │   ├── middlewares/
+│   │   │   ├── models.ts       # Schema Mongoose
+│   │   │   ├── modules/       # Các nghiệp vụ API
+│   │   │   └── seed.ts
+│   │   └── test/
+│   └── mobile/
+│       ├── app/               # Điểm vào Expo Router
+│       └── src/
+│           ├── admin/
+│           ├── components/    # Nút và ô nhập liệu dùng chung
+│           ├── context/       # Phiên đăng nhập
+│           ├── services/      # Gọi API và xử lý lỗi HTTP
+│           └── student/
+│               └── features/  # Các màn hình theo nghiệp vụ
+├── packages/contracts/        # Kiểu dữ liệu và danh mục trường dùng chung
+└── tsconfig.base.json
+```
+
+Trong API, các module gồm tài khoản, hồ sơ, tài liệu, giao dịch, tin nhắn, điểm, thông báo, đánh giá, báo cáo, quản trị, AI và danh mục trường. Đặt endpoint mới trong `routes.ts` của module tương ứng. Tách xử lý sang `service.ts` khi cần chia sẻ logic hoặc quản lý nhiều bước như giao dịch và điểm.
+
 ## Kết nối MongoDB Atlas
 
 1. Tạo project và cluster trên [MongoDB Atlas](https://www.mongodb.com/atlas). Atlas chạy online nên bạn không cần cài MongoDB Server trên máy.
@@ -62,9 +92,14 @@ Các luồng giữ, hoàn và thưởng điểm dùng MongoDB transaction. Nếu
 
 Bản đầu dùng email và mật khẩu; chưa có Google/Facebook OAuth hay khôi phục mật khẩu. Ảnh được lưu dạng dữ liệu ảnh nhỏ trong MongoDB; bài PDF hỗ trợ tệp nhỏ lưu trong MongoDB hoặc liên kết HTTPS. Chat cập nhật theo chu kỳ, chưa dùng WebSocket. Các màn có luồng nghiệp vụ chính và dùng bảng màu từ Figma; phần giao diện được triển khai theo phạm vi MVP.
 
+## Kiểm tra mã nguồn
+
 ```sh
 npm run check
+npm test
 ```
+
+`npm run check` kiểm tra kiểu TypeScript cho các workspace. `npm test` khởi động Express trên cổng tạm để kiểm tra danh mục trường, trạng thái API và phản hồi khi thiếu MongoDB.
 
 ## Tạo dữ liệu mẫu trên MongoDB
 

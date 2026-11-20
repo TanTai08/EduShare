@@ -1,10 +1,9 @@
-import { useCallback,useEffect,useRef,useState } from 'react';
+import { useEffect,useRef,useState } from 'react';
 import {
 BackHandler,Image,Linking,Platform,Pressable,ScrollView,Text,useWindowDimensions,View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
@@ -14,23 +13,19 @@ import { sample } from '../sample';
 import { styles } from './styles';
 import { Button,Field,Avatar,Cover,Nav } from './ui';
 import { blank,emptyLibrary,price,searchable,status,type AiTurn,type LibraryData,type Deal,type Message,type ModerationNotice,type Page,type Point,type Review,type User } from './models';
-import { AccountScreen } from './AccountScreen';
-import { DealsScreen } from './DealsScreen';
-import { AuthScreen } from './AuthScreen';
-import { MobileHome } from './MobileHome';
-import { DocumentScreen } from './DocumentScreen';
-import { PublishScreen } from './PublishScreen';
-import { MessagingScreen } from './MessagingScreen';
-import { LibraryHome,StudentLibrary } from './LibraryHome';
+import { AccountScreen } from './features/account/AccountScreen';
+import { DealsScreen } from './features/deals/DealsScreen';
+import { AuthScreen } from './features/auth/AuthScreen';
+import { MobileHome } from './features/catalog/MobileHome';
+import { DocumentScreen } from './features/documents/DocumentScreen';
+import { PublishScreen } from './features/publish/PublishScreen';
+import { MessagingScreen } from './features/messages/MessagingScreen';
+import { LibraryHome,StudentLibrary } from './features/catalog/LibraryHome';
 import { Workspace,palette,type Destination } from './Workspace';
 
-const endpoint = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000');
-function validateSessionUser(user: User) {
-  if (user.role !== 'student' && user.role !== 'admin') {
-    throw new Error('API chưa trả về vai trò tài khoản. Cập nhật mã nguồn và khởi động lại API EduShare.');
-  }
-  return user;
-}
+import { useAuth } from '../context/AuthContext';
+import { endpoint } from '../services/api';
+
 export default function EduShare() {
   const { width } = useWindowDimensions();
   const desktop = Platform.OS === 'web' && width >= 900;
@@ -39,8 +34,8 @@ export default function EduShare() {
   const scroll = useRef<ScrollView>(null);
   const libraryStart = useRef(0);
   const afterLogin = useRef<Page>('home');
-  const [token, setToken] = useState('');
-  const [me, setMe] = useState<User | null>(null);
+  const { token, user: me, restoredUser, api, signIn, signOut, updateUser } = useAuth();
+  const previousToken = useRef('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState<Listing[]>([]);
@@ -89,16 +84,6 @@ export default function EduShare() {
   const [profileName, setProfileName] = useState('');
   const [avatar, setAvatar] = useState('');
 
-  const api = useCallback(async function api<T>(path: string, method = 'GET', data?: unknown, session = token): Promise<T> {
-    const response = await fetch(endpoint + path, {
-      method, headers: { ...(session ? { Authorization: 'Bearer ' + session } : {}), ...(data ? { 'Content-Type': 'application/json' } : {}) },
-      body: data ? JSON.stringify(data) : undefined,
-    });
-    if (response.status === 204) return undefined as T;
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || 'Không thể kết nối máy chủ.');
-    return body as T;
-  }, [token]);
   async function run(task: () => Promise<void>) {
     if (busy) return;
     setBusy(true); setNotice('');
@@ -131,14 +116,20 @@ export default function EduShare() {
     return () => subscription.remove();
   }, [page]);
   useEffect(() => {
-    void AsyncStorage.getItem('edushare-session').then(async session => {
-      if (!session) return;
-      try {
-        const user = validateSessionUser(await api<User>('/me', 'GET', undefined, session));
-        setMe(user); setToken(session); setRegion(user.region); go('home');
-      } catch { /* Keep the welcome screen available offline. */ }
-    }).catch(() => {});
-  }, []);
+    if (!restoredUser) return;
+    setRegion(restoredUser.region);
+    go('home');
+  }, [restoredUser]);
+  useEffect(() => {
+    const previous = previousToken.current;
+    previousToken.current = token;
+    if (!previous || token) return;
+    setTurns([]); setDeals([]); setSelectedDeal(''); setList([]); setContacts([]); setContactQuery(''); setDealFilter(''); setMessages([]);
+    setMessage(''); setChatDocument(null); setReviews([]); setPoints({ balance: 0, entries: [] }); setForm(blank); setAiFields([]); setEditing('');
+    setProfileName(''); setAvatar(''); setEvidence(''); setReason(''); setReviewDeal(''); setPlace(''); setTime('');
+    activeChat.current = ''; libraryDirty.current = false; setLibrary(emptyLibrary); setLibraryFilter(''); setLibraryQuery(''); setModerationNotices([]);
+    afterLogin.current = 'home'; history.current = []; go('welcome');
+  }, [token]);
   useEffect(() => {
     if (page !== 'home' || me?.role === 'admin') return;
     let alive = true;
@@ -158,11 +149,10 @@ export default function EduShare() {
   }, [token, page, peer.id]);
   const authenticate = () => run(async () => {
     if (page === 'register' && password !== confirmation) throw new Error('Mật khẩu xác nhận chưa khớp.');
-    const response = await api<{ token: string; user: User }>(page === 'register' ? '/auth/register' : '/auth/login', 'POST',
-      page === 'register' ? { name, email, password, schoolId } : { email, password });
-    validateSessionUser(response.user);
-    await AsyncStorage.setItem('edushare-session', response.token);
-    setMe(response.user); setToken(response.token); setRegion(response.user.region); setPassword(''); setConfirmation('');
+    const response = page === 'register'
+      ? await signIn('register', { name, email, password, schoolId })
+      : await signIn('login', { email, password });
+    setRegion(response.user.region); setPassword(''); setConfirmation('');
     const destination = afterLogin.current;
     afterLogin.current = 'home'; history.current = destination === 'home' ? [] : ['home'];
     setNotice(''); go('home');
@@ -180,11 +170,7 @@ export default function EduShare() {
     return encoded;
   }
   function loadList(path: string, next: Page) { void run(async () => { setList(await api<Listing[]>(path)); open(next); }); }
-  const logout = () => void run(async () => {
-    await api('/auth/logout', 'POST'); await AsyncStorage.removeItem('edushare-session');
-    setMe(null); setToken(''); setTurns([]); setDeals([]); setList([]); setContacts([]); setContactQuery(''); setDealFilter(''); setMessages([]); activeChat.current = ''; libraryDirty.current = false; setLibrary(emptyLibrary); setLibraryFilter(''); setLibraryQuery(''); setModerationNotices([]);
-    afterLogin.current = 'home'; open('welcome');
-  });
+  const logout = () => void run(signOut);
   async function loadWorkspaceData(destination: Page, session = token) {
     if (destination === 'saved') {
       if (Platform.OS === 'web') {
@@ -237,7 +223,7 @@ export default function EduShare() {
     void run(async () => {
       const { saved } = await api<{ saved: boolean }>('/documents/' + doc.id + '/save', 'POST', { saved: !me.saved.includes(doc.id) });
       libraryDirty.current = true;
-      setMe({ ...me, saved: saved ? [...me.saved, doc.id] : me.saved.filter(id => id !== doc.id) });
+      updateUser({ ...me, saved: saved ? [...me.saved, doc.id] : me.saved.filter(id => id !== doc.id) });
     });
   }
   function reportListing() { setReason(''); setEvidence(''); secured('report'); }
@@ -430,7 +416,7 @@ export default function EduShare() {
         onSaved={() => { setLibraryFilter('saved'); openWorkspacePage('saved'); }} onMine={() => loadList('/documents/mine', 'mine')}
         onDeals={() => showDeals()} onWallet={() => openWorkspacePage('wallet')} onLogout={logout}
         onPickAvatar={() => void run(async () => { const value = await pick(); if (value) setAvatar(value); })}
-        onSaveProfile={() => void run(async () => { setMe(await api<User>('/me', 'PATCH', { name: profileName, avatar: avatar || undefined })); open('account'); })} />}
+        onSaveProfile={() => void run(async () => { updateUser(await api<User>('/me', 'PATCH', { name: profileName, avatar: avatar || undefined })); open('account'); })} />}
       {page === 'saved' && (desktop ? <StudentLibrary data={library} selected={libraryFilter} choose={setLibraryFilter} query={libraryQuery}
         change={setLibraryQuery} onOpen={showListing} onBrowse={() => open('home')} width={width} /> :
         list.length ? list.map(item => card(item)) : <Text>Chưa có tài liệu đã lưu.</Text>)}
