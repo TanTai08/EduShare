@@ -5,11 +5,13 @@ import { Button, Avatar, Field } from '../../ui';
 import { styles } from '../../styles';
 import { WebButton } from '../../Workspace';
 import { money, price, status, type Deal, type User } from '../../models';
+import { AppointmentPicker } from './AppointmentPicker';
+import type { Appointment } from './appointment';
 
-export function DealsScreen({ page, desktop, doc, listingCard, place, setPlace, time, setTime, onBook, dealFilter, setDealFilter, visibleDeals, deals,
+export function DealsScreen({ page, desktop, doc, listingCard, place, setPlace, appointment, setAppointment, onBook, dealFilter, setDealFilter, visibleDeals, deals,
   selectedDeal, onSelectDeal, showPeer, startChat, me, act, onReview, rating, setRating, message, setMessage, onReviewSubmit }: {
   page: 'appointment' | 'deals' | 'dealProgress' | 'review'; desktop: boolean; doc: Listing; listingCard: ReactNode;
-  place: string; setPlace: (value: string) => void; time: string; setTime: (value: string) => void; onBook: () => void;
+  place: string; setPlace: (value: string) => void; appointment: Appointment | null; setAppointment: (value: Appointment) => void; onBook: () => void;
   dealFilter: string; setDealFilter: (value: string) => void; visibleDeals: Deal[]; deals: Deal[]; selectedDeal: string; onSelectDeal: (id: string) => void;
   showPeer: (user: PublicUser) => void; startChat: (user: PublicUser) => void; me: User | null;
   act: (id: string, action: string) => void; onReview: (id: string) => void; rating: number; setRating: (value: number) => void;
@@ -17,7 +19,10 @@ export function DealsScreen({ page, desktop, doc, listingCard, place, setPlace, 
 }) {
 
   if (page === 'appointment') return <>
-    {listingCard}<Text style={styles.small}>{doc.type === 'sale' ? 'Trả ' + price(doc) + ' trực tiếp khi nhận tài liệu.' : 'Giữ ' + price(doc) + ' khi gửi yêu cầu. Hoàn điểm nếu hủy trước khi giao.'}</Text><Field label="Điểm hẹn" value={place} change={setPlace} /><Field label="Ngày và giờ hẹn" value={time} change={setTime} />
+    {listingCard}
+    <Text style={styles.small}>{doc.type === 'sale' ? 'Trả ' + price(doc) + ' trực tiếp khi nhận tài liệu.' : 'Giữ ' + price(doc) + ' khi gửi yêu cầu. Hoàn điểm nếu hủy trước khi giao.'}</Text>
+    <Field label="Điểm hẹn" value={place} change={setPlace} />
+    <AppointmentPicker value={appointment} onChange={setAppointment} />
     <Button caption="Gửi yêu cầu đặt hẹn" onPress={onBook} />
   </>;
   if (page === 'deals') return <>

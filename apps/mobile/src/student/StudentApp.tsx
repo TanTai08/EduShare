@@ -15,6 +15,7 @@ import { blank,emptyLibrary,price,searchable,status,type AiTurn,type LibraryData
 import { emptyEducation, type EducationDraft } from './features/academic/EducationFields';
 import { AccountScreen } from './features/account/AccountScreen';
 import { DealsScreen } from './features/deals/DealsScreen';
+import { formatAppointment, type Appointment } from './features/deals/appointment';
 import { AuthScreen } from './features/auth/AuthScreen';
 import { MobileHome } from './features/catalog/MobileHome';
 import { DocumentScreen } from './features/documents/DocumentScreen';
@@ -69,7 +70,7 @@ export default function EduShare() {
   const [aiFields, setAiFields] = useState<string[]>([]);
   const [editing, setEditing] = useState('');
   const [place, setPlace] = useState('');
-  const [time, setTime] = useState('');
+  const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [peer, setPeer] = useState<PublicUser>(sample[0].owner);
   const [contacts, setContacts] = useState<PublicUser[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -129,7 +130,7 @@ export default function EduShare() {
     if (!previous || token) return;
     setTurns([]); setDeals([]); setSelectedDeal(''); setList([]); setContacts([]); setContactQuery(''); setDealFilter(''); setMessages([]);
     setMessage(''); setChatDocument(null); setReviews([]); setPoints({ balance: 0, entries: [] }); setForm(blank); setPublishChecked(false); setAiFields([]); setEditing('');
-    setProfileName(''); setAvatar(''); setEducation(emptyEducation); setEvidence(''); setReason(''); setReviewDeal(''); setPlace(''); setTime('');
+    setProfileName(''); setAvatar(''); setEducation(emptyEducation); setEvidence(''); setReason(''); setReviewDeal(''); setPlace(''); setAppointment(null);
     activeChat.current = ''; libraryDirty.current = false; setLibrary(emptyLibrary); setLibraryFilter(''); setLibraryQuery(''); setModerationNotices([]);
     afterLogin.current = 'home'; history.current = []; go('welcome');
   }, [token]);
@@ -221,7 +222,7 @@ export default function EduShare() {
   function bookListing() {
     if (me && doc.owner.id === me.id) { setNotice('Đây là tài liệu của bạn.'); return; }
     if (me && doc.owner.region !== me.region) { setNotice('Tài liệu này giao nhận tại ' + doc.owner.region + '. Hãy chọn tài liệu cùng khu vực với trường của bạn.'); return; }
-    setPlace(''); setTime(''); secured('appointment');
+    setPlace(''); setAppointment(null); secured('appointment');
   }
   function saveListing() {
     if (!me) { secured('detail'); return; }
@@ -404,9 +405,12 @@ export default function EduShare() {
         onOpenPdf={openPdf} onBook={bookListing} onChat={startChat} onSave={saveListing} onReport={reportListing} onProfile={showPeer}
         onBackToDetail={() => { if (!back()) open('detail'); }} onHome={() => open('home')} />}
       {(page === 'appointment' || page === 'deals' || page === 'dealProgress' || page === 'review') && <DealsScreen page={page} desktop={desktop} doc={doc}
-        listingCard={page === 'appointment' ? card(doc) : null} place={place} setPlace={setPlace} time={time} setTime={setTime}
+        listingCard={page === 'appointment' ? card(doc) : null} place={place} setPlace={setPlace} appointment={appointment}
+        setAppointment={value => { setAppointment(value); setNotice(''); }}
         onBook={() => void run(async () => {
-          const created = await api<Deal>('/deals', 'POST', { doc: doc.id, location: place, time });
+          if (!place.trim()) throw new Error('Vui lòng nhập điểm hẹn.');
+          if (!appointment) throw new Error('Vui lòng chọn ngày và giờ hẹn.');
+          const created = await api<Deal>('/deals', 'POST', { doc: doc.id, location: place.trim(), time: formatAppointment(appointment) });
           setSelectedDeal(created._id);
           setDeals(current => [{ ...created, document: { title: doc.title, cover: doc.cover }, counterparty: doc.owner }, ...current]);
           open('dealProgress');
