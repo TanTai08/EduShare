@@ -25,17 +25,17 @@ const schoolModel = model('AcademicSchool', new Schema({
   _id: { type: String, required: true },
   name: { type: String, required: true },
   region: { type: String, required: true },
-}));
+}, { autoCreate: false, autoIndex: false, bufferCommands: false }));
 type StoredMajor = Omit<Major, 'id' | 'specializations'> & { _id: string; schoolId: string; tracks: Record<string, string> };
 const majorModel = model('AcademicMajor', new Schema<StoredMajor>({
   _id: { type: String, required: true },
-  schoolId: { type: String, required: true, index: true },
+  schoolId: { type: String, required: true },
   code: String,
   name: { type: String, required: true },
   tracks: Schema.Types.Mixed,
   sourceUrl: String,
   sourceYear: Number,
-}));
+}, { autoCreate: false, autoIndex: false, bufferCommands: false }));
 
 export const bundledCatalog = catalogInput.parse(JSON.parse(readFileSync(new URL('./catalog.json', import.meta.url), 'utf8')));
 let schools: AcademicSchool[] = [...legacySchools];
@@ -60,23 +60,37 @@ export async function writeCatalog(catalog: Catalog, seed = false) {
   if (majorWrites.length) await majorModel.bulkWrite(majorWrites);
 }
 
-export async function loadCatalog() {
-  await writeCatalog(bundledCatalog, true);
-  const [storedSchools, storedMajors] = await Promise.all([schoolModel.find().lean(), majorModel.find().lean()]);
+export function useBundledCatalog() {
   const byId = new Map<string, AcademicSchool>(legacySchools.map(school => [school.id, school]));
-  for (const { _id, name, region } of storedSchools) byId.set(_id, { id: _id, name, region });
-  schools = [...byId.values()].sort(alphabetical);
-
   const grouped = new Map<string, Major[]>();
+  for (const { majors, ...school } of bundledCatalog) {
+    byId.set(school.id, school);
+    grouped.set(school.id, [...majors].sort(alphabetical));
+  }
+  schools = [...byId.values()].sort(alphabetical);
+  majorsBySchool = grouped;
+}
+
+export async function loadStoredCatalog() {
+  const [storedSchools, storedMajors] = await Promise.all([schoolModel.find().lean(), majorModel.find().lean()]);
+  const byId = new Map(schools.map(school => [school.id, school]));
+  for (const { _id, name, region } of storedSchools) byId.set(_id, { id: _id, name, region });
+
+  const grouped = new Map([...majorsBySchool].map(([schoolId, items]) => [
+    schoolId, new Map(items.map(item => [item.id, item])),
+  ]));
   for (const major of storedMajors) {
     const { _id, schoolId, code, name, sourceUrl, sourceYear } = major;
-    const items = grouped.get(schoolId) ?? [];
-    const specializations = Object.entries(major.tracks ?? {}).map(([id, name]) => ({ id, name })).sort(alphabetical);
-    items.push({ id: _id.slice(schoolId.length + 1), code, name, sourceUrl, sourceYear, specializations });
+    const id = _id.slice(schoolId.length + 1);
+    const items = grouped.get(schoolId) ?? new Map<string, Major>();
+    const tracks = new Map(items.get(id)?.specializations.map(item => [item.id, item.name]));
+    for (const [key, value] of Object.entries(major.tracks ?? {})) tracks.set(key, value);
+    const specializations = [...tracks].map(([id, name]) => ({ id, name })).sort(alphabetical);
+    items.set(id, { id, code, name, sourceUrl, sourceYear, specializations });
     grouped.set(schoolId, items);
   }
-  for (const items of grouped.values()) items.sort(alphabetical);
-  majorsBySchool = grouped;
+  schools = [...byId.values()].sort(alphabetical);
+  majorsBySchool = new Map([...grouped].map(([schoolId, items]) => [schoolId, [...items.values()].sort(alphabetical)]));
 }
 
 export const listSchools = () => schools;

@@ -103,7 +103,7 @@ npm test
 
 ## Danh mục trường và ngành học
 
-API tự nạp danh mục có sẵn của Đà Nẵng vào MongoDB khi khởi động. Bộ dữ liệu được đọc từ nguồn tuyển sinh và trang chương trình đào tạo của các trường. Các mã trường từng dùng cho tài khoản hiện có được giữ nguyên. Hồ sơ sinh viên chọn khu vực, trường hoặc cơ sở, ngành học rồi đến chuyên ngành nếu có. Danh mục Huế vẫn gồm các trường EduShare đã hỗ trợ. Sinh viên có thể bổ sung ngành khi danh mục trường được cập nhật.
+API tự nạp danh mục có sẵn của Đà Nẵng vào MongoDB khi khởi động. Nếu hai collection danh mục gặp lỗi, API ghi rõ bước gặp lỗi và vẫn dùng dữ liệu đi kèm khi MongoDB cùng các chỉ mục chính đã sẵn sàng. Bộ dữ liệu được đọc từ nguồn tuyển sinh và trang chương trình đào tạo của các trường. Các mã trường từng dùng cho tài khoản hiện có được giữ nguyên. Hồ sơ sinh viên chọn khu vực, trường hoặc cơ sở, ngành học rồi đến chuyên ngành nếu có. Danh mục Huế vẫn gồm các trường EduShare đã hỗ trợ. Sinh viên có thể bổ sung ngành khi danh mục trường được cập nhật.
 
 Để đọc nguồn mới và xem số mục tìm được, chạy ở thư mục gốc.
 
