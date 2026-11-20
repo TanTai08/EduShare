@@ -12,13 +12,16 @@ import { listingLabels, schools, type Listing, type ListingType, type PublicUser
 import { sample } from '../src/sample';
 
 const endpoint = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000');
-type User = PublicUser & { points: number; saved: string[] };
+type User = PublicUser & { points: number; saved: string[]; role?: string };
+type AdminUser = { id: string; name: string; email: string; school?: string; role: string };
+type AdminReport = { id: string; title: string; reason: string; description: string; image?: string };
+type AdminTab = 'posts' | 'users' | 'reports';
 type Deal = { _id: string; buyer: string; seller: string; type: string; price: number; time: string; location: string; status: string; confirmations: string[]; counterparty?: PublicUser; document?: { title: string; cover?: string } };
 type AiTurn = { question: string; answer: string; sources: { id: string; title: string }[] };
 type Message = { _id: string; from: string; text: string };
 type Point = { _id: string; amount: number; reason: string };
 type Review = { _id: string; rating: number; text: string };
-type Page = 'welcome' | 'login' | 'register' | 'home' | 'detail' | 'publish' | 'preview' | 'posted' | 'account' | 'saved' | 'mine' | 'wallet' | 'deals' | 'appointment' | 'inbox' | 'chat' | 'profile' | 'assistant' | 'report' | 'moderation' | 'edit' | 'review' | 'region' | 'notifications' | 'dealProgress' | 'pdfOpened' | 'reportSent';
+type Page = 'welcome' | 'login' | 'register' | 'home' | 'detail' | 'publish' | 'preview' | 'posted' | 'account' | 'saved' | 'mine' | 'wallet' | 'deals' | 'appointment' | 'inbox' | 'chat' | 'profile' | 'assistant' | 'report' | 'edit' | 'review' | 'region' | 'notifications' | 'dealProgress' | 'pdfOpened' | 'reportSent';
 const status: Record<string, string> = { requested: 'Chờ người đăng xác nhận', scheduled: 'Đã hẹn', waiting: 'Chờ bên còn lại xác nhận', completed: 'Hoàn tất', cancelled: 'Đã hủy', pending: 'Chờ duyệt', approved: 'Đã duyệt', revision: 'Cần sửa' };
 const money = (n: number) => n.toLocaleString('vi-VN') + ' ₫';
 const price = (doc: Listing) => doc.type === 'digital' ? 'Miễn phí' : doc.type === 'sale' ? money(doc.price) : doc.price + ' điểm';
@@ -47,6 +50,10 @@ export default function EduShare() {
   const [items, setItems] = useState<Listing[]>([]);
   const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [catalogRefresh, setCatalogRefresh] = useState(0);
+  const [adminTab, setAdminTab] = useState<AdminTab>('posts');
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [adminReports, setAdminReports] = useState<AdminReport[]>([]);
+  const [feedback, setFeedback] = useState<Record<string, string>>({});
   const [list, setList] = useState<Listing[]>([]);
   const [doc, setDoc] = useState<Listing>(sample[0]);
   const [q, setQ] = useState('');
@@ -128,14 +135,14 @@ export default function EduShare() {
     }).catch(() => {});
   }, []);
   useEffect(() => {
-    if (page !== 'home') return;
+    if (page !== 'home' || me?.role === 'admin') return;
     let alive = true;
     setCatalogState('loading');
     void api<Listing[]>('/documents?region=' + encodeURIComponent(region) + (filter ? '&type=' + filter : '')).then(rows => {
       if (alive) { setItems(rows); setCatalogState('ready'); }
     }).catch(() => { if (alive) { setItems([]); setCatalogState('error'); } });
     return () => { alive = false; };
-  }, [page, region, filter, catalogRefresh]);
+  }, [page, region, filter, catalogRefresh, me?.role]);
   useEffect(() => {
     if (!token || page !== 'chat') return;
     let alive = true;
@@ -163,6 +170,20 @@ export default function EduShare() {
     return encoded;
   }
   function loadList(path: string, next: Page) { void run(async () => { setList(await api<Listing[]>(path)); open(next); }); }
+  async function loadAdmin(tab: AdminTab) {
+    if (tab === 'posts') setList(await api<Listing[]>('/moderation'));
+    if (tab === 'users') setAdminUsers(await api<AdminUser[]>('/admin/users'));
+    if (tab === 'reports') setAdminReports(await api<AdminReport[]>('/admin/reports'));
+    setAdminTab(tab);
+  }
+  useEffect(() => {
+    if (token && me?.role === 'admin') void run(() => loadAdmin('posts'));
+  }, [token, me?.role]);
+  const logout = () => void run(async () => {
+    await api('/auth/logout', 'POST'); await AsyncStorage.removeItem('edushare-session');
+    setMe(null); setToken(''); setTurns([]); setDeals([]); setList([]); setAdminUsers([]); setAdminReports([]); setFeedback({});
+    afterLogin.current = 'home'; open('welcome');
+  });
   function showDeals(destination: 'deals' | 'notifications' = 'deals') {
     if (!me) { secured(destination); return; }
     void run(async () => { setDeals(await api<Deal[]>('/deals')); open(destination); });
@@ -203,6 +224,36 @@ export default function EduShare() {
   }
   function toggleFilter(value: ListingType) { setQ(''); setFilter(current => current === value ? '' : value); }
   const matches = items.filter(item => [item.title, item.subject, item.category, item.owner?.school || ''].some(v => v.toLowerCase().includes(q.toLowerCase())));
+  if (me?.role === 'admin') return <SafeAreaView style={styles.shell}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <View style={styles.accountHero}><Ionicons name="shield-checkmark-outline" size={34} color="#203448" /><Text style={styles.detailTitle}>Quản trị EduShare</Text><Text style={styles.small}>{me.name}</Text></View>
+      <View style={styles.wrap}>
+        <Button caption="Duyệt bài" alt={adminTab !== 'posts'} onPress={() => void run(() => loadAdmin('posts'))} />
+        <Button caption="Người dùng" alt={adminTab !== 'users'} onPress={() => void run(() => loadAdmin('users'))} />
+        <Button caption="Báo cáo" alt={adminTab !== 'reports'} onPress={() => void run(() => loadAdmin('reports'))} />
+      </View>
+      {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
+      {busy && <ActivityIndicator color="#9d6a00" />}
+      {adminTab === 'posts' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
+        <View style={styles.row}><Cover doc={item} /><View style={styles.flex}><Text style={styles.bold}>{item.title}</Text><Text style={styles.small}>{item.owner?.name}</Text><Text style={styles.small}>{price(item)}</Text></View></View>
+        <Text style={styles.body}>{item.description}</Text>
+        <Field label="Lý do yêu cầu sửa" value={feedback[item.id] || ''} change={value => setFeedback(current => ({ ...current, [item.id]: value }))} />
+        <View style={styles.wrap}>{[true, false].map(approved => <Button key={String(approved)} caption={approved ? 'Duyệt bài' : 'Yêu cầu sửa'} alt={!approved} onPress={() => void run(async () => {
+          await api('/moderation/' + item.id, 'POST', { approved, feedback: approved ? undefined : feedback[item.id]?.trim() });
+          await loadAdmin('posts');
+        })} />)}</View>
+      </View>) : !busy && <Text>Không có bài chờ duyệt.</Text>)}
+      {adminTab === 'users' && adminUsers.map(user => <View key={user.id} style={styles.panel}>
+        <Text style={styles.bold}>{user.name}</Text><Text>{user.email}</Text><Text style={styles.small}>{user.school} · {user.role === 'admin' ? 'Quản trị viên' : 'Sinh viên'}</Text>
+      </View>)}
+      {adminTab === 'reports' && (adminReports.length ? adminReports.map(report => <View key={report.id} style={styles.panel}>
+        <Text style={styles.bold}>{report.title}</Text><Text>{report.reason}</Text><Text style={styles.body}>{report.description}</Text>
+        {!!report.image && <Image accessibilityLabel="Ảnh minh chứng" source={{ uri: report.image }} style={styles.picture} />}
+        <Button caption="Đánh dấu đã xử lý" alt onPress={() => void run(async () => { await api('/admin/reports/' + report.id + '/resolve', 'POST'); await loadAdmin('reports'); })} />
+      </View>) : !busy && <Text>Không có báo cáo chờ xử lý.</Text>)}
+      <Button caption="Đăng xuất" onPress={logout} alt />
+    </ScrollView>
+  </SafeAreaView>;
   if (page === 'welcome' || page === 'login' || page === 'register') {
     const welcome = page === 'welcome';
     const register = page === 'register';
@@ -252,7 +303,7 @@ export default function EduShare() {
       </ScrollView>
     </SafeAreaView>;
   }
-  const heading: Partial<Record<Page, string>> = { login: 'Đăng nhập', register: 'Đăng ký', detail: 'Chi tiết tài liệu', publish: 'Đăng tài liệu', preview: 'Xem trước bài đăng', posted: 'Đã gửi duyệt', account: 'Hồ sơ của tôi', saved: 'Tài liệu đã lưu', mine: 'Bài đăng của tôi', deals: 'Lịch sử giao dịch', appointment: 'Đặt lịch nhận', wallet: 'Ví điểm', inbox: 'Tin nhắn', chat: peer.name, profile: 'Hồ sơ công khai', assistant: 'Trợ lý AI', report: 'Báo cáo tài liệu', moderation: 'Duyệt bài đăng', edit: 'Chỉnh sửa hồ sơ', review: 'Đánh giá giao dịch', region: 'Khu vực giao dịch', notifications: 'Thông báo', dealProgress: 'Tiến trình giao dịch', pdfOpened: 'Tài liệu PDF', reportSent: 'Đã gửi báo cáo' };
+  const heading: Partial<Record<Page, string>> = { login: 'Đăng nhập', register: 'Đăng ký', detail: 'Chi tiết tài liệu', publish: 'Đăng tài liệu', preview: 'Xem trước bài đăng', posted: 'Đã gửi duyệt', account: 'Hồ sơ của tôi', saved: 'Tài liệu đã lưu', mine: 'Bài đăng của tôi', deals: 'Lịch sử giao dịch', appointment: 'Đặt lịch nhận', wallet: 'Ví điểm', inbox: 'Tin nhắn', chat: peer.name, profile: 'Hồ sơ công khai', assistant: 'Trợ lý AI', report: 'Báo cáo tài liệu', edit: 'Chỉnh sửa hồ sơ', review: 'Đánh giá giao dịch', region: 'Khu vực giao dịch', notifications: 'Thông báo', dealProgress: 'Tiến trình giao dịch', pdfOpened: 'Tài liệu PDF', reportSent: 'Đã gửi báo cáo' };
   return <SafeAreaView style={styles.shell}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       {heading[page] && <Pressable accessibilityRole="button" onPress={() => { if (!back()) open('home'); }} style={styles.row}><Ionicons name="arrow-back" size={22} /><Text style={styles.heading}>{heading[page]}</Text></Pressable>}
@@ -393,15 +444,13 @@ export default function EduShare() {
         <AccountRow glyph="book-outline" caption="Bài đăng của tôi" press={() => loadList('/documents/mine', 'mine')} />
         <AccountRow glyph="swap-horizontal-outline" caption="Lịch sử giao dịch" press={() => showDeals()} />
         <AccountRow glyph="star-outline" caption="Ví điểm" press={() => void run(async () => { setPoints(await api<typeof points>('/points')); open('wallet'); })} />
-        <Button caption="Duyệt bài (quản trị)" alt onPress={() => loadList('/moderation', 'moderation')} />
-        <Button caption="Đăng xuất" onPress={() => void run(async () => { await api('/auth/logout', 'POST'); await AsyncStorage.removeItem('edushare-session'); setMe(null); setToken(''); setTurns([]); setDeals([]); afterLogin.current = 'home'; open('welcome'); })} />
+        <Button caption="Đăng xuất" onPress={logout} />
       </>}
       {page === 'edit' && me && <><Avatar user={{ ...me, avatar }} /><Button caption="Thay ảnh đại diện" alt onPress={() => void run(async () => { const value = await pick(); if (value) setAvatar(value); })} /><Field label="Họ và tên" value={profileName} change={setProfileName} /><Button caption="Lưu thay đổi" onPress={() => void run(async () => { setMe(await api<User>('/me', 'PATCH', { name: profileName, avatar: avatar || undefined })); open('account'); })} /></>}
       {page === 'saved' && (list.length ? list.map(item => card(item)) : <Text>Chưa có tài liệu đã lưu.</Text>)}
-      {(page === 'mine' || page === 'moderation') && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
+      {page === 'mine' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
         {card(item)}<Text>{status[item.status]}</Text>
-        {page === 'mine' && item.status === 'revision' && <Button caption="Sửa và gửi lại" onPress={() => { setEditing(item.id); setAiFields([]); setType(item.type); setForm({ title: item.title, subject: item.subject, category: item.category, description: item.description, cover: item.cover || '', cost: String(item.price), fileUrl: item.fileUrl || '', fileName: item.fileName || '', pdf: '' }); open('publish'); }} />}
-        {page === 'moderation' && <View style={styles.wrap}>{[true, false].map(approved => <Button key={String(approved)} caption={approved ? 'Duyệt bài' : 'Yêu cầu sửa'} alt={!approved} onPress={() => void run(async () => { await api('/moderation/' + item.id, 'POST', { approved }); setList(await api<Listing[]>('/moderation')); })} />)}</View>}
+        {item.status === 'revision' && <Button caption="Sửa và gửi lại" onPress={() => { setEditing(item.id); setAiFields([]); setType(item.type); setForm({ title: item.title, subject: item.subject, category: item.category, description: item.description, cover: item.cover || '', cost: String(item.price), fileUrl: item.fileUrl || '', fileName: item.fileName || '', pdf: '' }); open('publish'); }} />}
       </View>) : <Text>Chưa có bài đăng.</Text>)}
       {page === 'wallet' && <><View style={styles.hero}><Text style={styles.heading}>{points.balance} điểm khả dụng</Text></View>{points.entries.map(p => <View key={p._id} style={styles.panel}><Text style={styles.bold}>{p.amount > 0 ? '+' : ''}{p.amount} điểm</Text><Text>{p.reason}</Text></View>)}</>}
       {page === 'profile' && <><View style={styles.hero}><Avatar user={peer} /><Text style={styles.heading}>{peer.name}</Text><Text>{peer.school}</Text><Text>{reviewItems.length ? (reviewItems.reduce((sum, r) => sum + r.rating, 0) / reviewItems.length).toFixed(1) + ' ★' : 'Chưa có đánh giá'}</Text></View><Button caption="Nhắn tin" onPress={() => startChat(peer)} />{reviewItems.map(r => <View key={r._id} style={styles.panel}><Text style={styles.bold}>{r.rating} ★</Text><Text>{r.text}</Text></View>)}</>}

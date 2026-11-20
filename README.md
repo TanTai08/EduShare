@@ -52,7 +52,7 @@ Các luồng giữ, hoàn và thưởng điểm dùng MongoDB transaction. Nếu
 
 1. Đăng ký hai tài khoản thuộc các trường cùng khu vực để thử giao nhận. Có thể tạo tài khoản thứ ba thuộc Huế để thử giới hạn khu vực.
 2. Đăng một PDF miễn phí bằng tệp PDF tối đa 3 MB hoặc liên kết HTTPS, hoặc đăng bản in có giá hoặc số điểm. Bài mới ở trạng thái chờ duyệt.
-3. Muốn thử duyệt, đặt trường `role` của một tài khoản thử nghiệm thành `admin` trong collection `users` bằng Atlas Data Explorer. Dùng mục **Duyệt bài** trong hồ sơ của tài khoản đó.
+3. Muốn thử duyệt, đặt trường `role` của một tài khoản thử nghiệm thành `admin` trong collection `users` bằng Atlas Data Explorer. Đăng nhập lại để mở **Quản trị EduShare**, rồi dùng mục **Duyệt bài**. Dùng tài khoản sinh viên riêng để đăng tài liệu và giao nhận.
 4. Bên nhận đặt hẹn, bên giao chấp nhận, sau đó hai bên xác nhận giao nhận. Tiền được trả trực tiếp. Với nhánh điểm, số điểm được trừ khi đặt hẹn và hoàn nếu hủy trước khi bên nào xác nhận giao nhận. Hệ thống cộng điểm thưởng khi hoàn tất.
 5. Thử thẻ người đăng, chat, lưu tài liệu, đánh giá sau giao dịch và báo cáo bằng ảnh.
 
