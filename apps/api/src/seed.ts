@@ -56,14 +56,19 @@ function samplePdf() {
   file += 'xref\n0 6\n0000000000 65535 f \n' + offsets.map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('');
   return Buffer.from(file + 'trailer\n<< /Root 1 0 R /Size 6 >>\nstartxref\n' + start + '\n%%EOF\n');
 }
+let stage = 'đọc cấu hình';
+
 async function seed() {
   const uri = process.env.MONGODB_URI;
   const password = process.env.DEMO_PASSWORD;
   if (!uri || !password || password.length < 8 || password.length > 128) {
     throw new Error('Đặt MONGODB_URI và DEMO_PASSWORD (8–128 ký tự) trong apps/api/.env.');
   }
+  stage = 'kết nối MongoDB';
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 6000 });
+  stage = 'khởi tạo collection và index';
   await Promise.all([models.users.init(), models.docs.init(), models.points.init()]);
+  stage = 'ghi dữ liệu mẫu';
   await mongoose.connection.transaction(async session => {
     for (const account of accounts) {
       const id = demoId(account.email);
@@ -86,6 +91,26 @@ async function seed() {
 }
 seed().catch(error => {
   const message = error instanceof Error ? error.message : '';
-  console.error(message.startsWith('Đặt ') || message.startsWith('Email demo ') ? message : 'Không tạo được dữ liệu mẫu. Kiểm tra kết nối MongoDB và replica set.');
+  if (message.startsWith('Đặt ') || message.startsWith('Email demo ')) {
+    console.error(message);
+  } else {
+    const failure = error as { name?: string; code?: number | string; cause?: { code?: string } };
+    const rawCode = String(failure.code ?? failure.cause?.code ?? '');
+    const code = /^[A-Z0-9_]+$/.test(rawCode) ? rawCode : '';
+    const hints: Record<string, string> = {
+      '18': 'Kiểm tra database user và mật khẩu trong URI.',
+      '8000': 'Kiểm tra database user, mật khẩu đã mã hóa URL và trạng thái cluster Atlas.',
+      '13': 'Database user cần quyền đọc, ghi và tạo index trên database đích.',
+      '20': 'MongoDB cần replica set để ghi dữ liệu theo transaction.',
+      '11000': 'Có dữ liệu hoặc index duy nhất bị trùng. Kiểm tra index và email mẫu.',
+      ENOTFOUND: 'Không phân giải được địa chỉ cluster. Kiểm tra hostname và DNS.',
+      ENODATA: 'Không tìm thấy bản ghi DNS cho cluster. Kiểm tra hostname và DNS.',
+      ECONNREFUSED: 'Không kết nối được máy chủ MongoDB. Kiểm tra địa chỉ và cổng.',
+    };
+    const hint = hints[code] || (stage === 'kết nối MongoDB'
+      ? 'Kiểm tra cluster đang chạy, IP hiện tại trong Atlas Network Access và chuỗi kết nối.'
+      : 'Kiểm tra quyền ghi, index và cấu hình replica set của database đích.');
+    console.error('Seed thất bại tại bước ' + stage + (code ? ' (mã ' + code + ')' : '') + '. ' + hint);
+  }
   process.exitCode = 1;
 }).finally(() => mongoose.disconnect());
