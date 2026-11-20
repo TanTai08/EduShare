@@ -28,3 +28,34 @@ export type Listing = {
 export const listingLabels: Record<ListingType, string> = {
   digital: 'Tải miễn phí', sale: 'Bán bản in', points: 'Nhận bằng điểm',
 };
+
+export const listingTextFields = {
+  title: { label: 'Tên tài liệu', max: 130 },
+  subject: { label: 'Môn học', max: 90 },
+  category: { label: 'Danh mục', max: 70 },
+  description: { label: 'Mô tả', max: 1200 },
+} as const;
+export type ListingTextField = keyof typeof listingTextFields;
+export const listingTextKeys = Object.keys(listingTextFields) as ListingTextField[];
+
+export function listingTextError(key: ListingTextField, value: string) {
+  const { label, max } = listingTextFields[key];
+  if (!value.trim()) return 'Vui lòng điền ' + label.toLocaleLowerCase('vi') + '.';
+  if (value.trim().length > max) return label + ' tối đa ' + max + ' ký tự.';
+}
+
+export const listingPriceLimits = { sale: 100_000_000, points: 1_000 };
+export const listingPriceErrors = {
+  sale: 'Giá bán phải là số nguyên từ 1 đến 100.000.000 đồng.',
+  points: 'Điểm cần dùng phải là số nguyên từ 1 đến 1.000.',
+};
+
+export function isListingPdfUrl(value: string) {
+  if (value.length > 2_000) return false;
+  try {
+    const url = new URL(value);
+    return /^https:\/\//i.test(value) && url.protocol === 'https:' && !!url.hostname;
+  } catch {
+    return false;
+  }
+}

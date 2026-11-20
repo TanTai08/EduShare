@@ -1,13 +1,14 @@
 import { Image, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { listingLabels, type ListingType } from '../../../../../../packages/contracts';
+import { listingLabels, listingTextFields, listingTextKeys, type ListingType } from '../../../../../../packages/contracts';
 import { Button, Field } from '../../ui';
 import { styles } from '../../styles';
 import { money, type blank } from '../../models';
+import type { PublishErrors } from './validation';
 
-export function PublishScreen({ page, desktop, form, aiFields, type, formField, chooseType, onCover, onReadCover, onPickPdf, onPdfUrl,
+export function PublishScreen({ page, desktop, form, aiFields, errors, type, formField, chooseType, onCover, onReadCover, onPickPdf, onPdfUrl,
   onPreview, onSubmit, onEdit, onMine }: {
-  page: 'publish' | 'preview' | 'posted'; desktop: boolean; form: typeof blank; aiFields: string[]; type: ListingType;
+  page: 'publish' | 'preview' | 'posted'; desktop: boolean; form: typeof blank; aiFields: string[]; errors: PublishErrors; type: ListingType;
   formField: (key: keyof typeof blank) => (value: string) => void; chooseType: (type: ListingType) => void;
   onCover: () => void; onReadCover: () => void; onPickPdf: () => void; onPdfUrl: (value: string) => void;
   onPreview: () => void; onSubmit: () => void; onEdit: () => void; onMine: () => void;
@@ -19,7 +20,7 @@ export function PublishScreen({ page, desktop, form, aiFields, type, formField, 
   </>;
   const fileFields = page === 'publish' && type === 'digital' && <>
     <Button caption={form.fileName || 'Chọn tệp PDF (tối đa 3 MB)'} alt onPress={onPickPdf} />
-    <Field label="Hoặc liên kết HTTPS đến PDF" value={form.fileUrl} change={onPdfUrl} />
+    <Field label="Hoặc liên kết HTTPS đến PDF" value={form.fileUrl} change={onPdfUrl} error={errors.fileUrl} />
   </>;
 
   if (page === 'publish') return <View style={desktop ? styles.webSplit : styles.detailStack}>
@@ -29,10 +30,13 @@ export function PublishScreen({ page, desktop, form, aiFields, type, formField, 
     </View>
     <View style={[styles.detailStack, desktop && styles.webPrimary]}>
       {desktop && <Text accessibilityRole="header" style={styles.heading}>Thông tin tài liệu</Text>}
-      {([['title','Tên tài liệu'],['subject','Môn học'],['category','Danh mục'],['description','Mô tả']] as const).map(([key, label]) =>
-        <Field key={key} label={aiFields.includes(key) ? label + ' · AI' : label} value={form[key]} change={formField(key)} />)}
+      {listingTextKeys.map(key => {
+        const { label, max } = listingTextFields[key];
+        return <Field key={key} label={aiFields.includes(key) ? label + ' · AI' : label} value={form[key]}
+          change={formField(key)} error={errors[key]} multiline={key === 'description'} maxLength={max} />;
+      })}
       <View style={styles.wrap}>{(Object.keys(listingLabels) as ListingType[]).map(value => <Button key={value} caption={listingLabels[value]} onPress={() => chooseType(value)} alt={value !== type} />)}</View>
-      {type === 'digital' ? fileFields : <Field label={type === 'sale' ? 'Giá bán (VNĐ)' : 'Điểm cần dùng'} value={form.cost} change={formField('cost')} />}
+      {type === 'digital' ? fileFields : <Field label={type === 'sale' ? 'Giá bán (VNĐ)' : 'Điểm cần dùng'} value={form.cost} change={formField('cost')} error={errors.cost} />}
       <Button caption="Xem trước" onPress={onPreview} />
     </View>
   </View>;

@@ -8,9 +8,17 @@ export function Button({ caption, onPress, alt = false, fill = false }: { captio
   return <TextButton label={caption} labelStyle={styles.bold} onPress={onPress}
     style={[styles.button, alt && styles.alt, fill && styles.flex]} />;
 }
-export function Field({ label, value, change, secret = false }: { label: string; value: string; change: (s: string) => void; secret?: boolean }) {
-  return <LabeledField label={label} labelStyle={styles.small} fieldStyle={styles.field}
-    autoCapitalize="none" secureTextEntry={secret} value={value} onChangeText={change} style={styles.input} />;
+export function Field({ label, value, change, secret = false, error, multiline, maxLength }: {
+  label: string; value: string; change: (s: string) => void; secret?: boolean; error?: string;
+  multiline?: boolean; maxLength?: number;
+}) {
+  return <View>
+    <LabeledField label={label} labelStyle={styles.small} fieldStyle={styles.field}
+      autoCapitalize="none" secureTextEntry={secret} value={value} onChangeText={change}
+      multiline={multiline} maxLength={maxLength} accessibilityHint={error}
+      style={[styles.input, multiline && { minHeight: 80, textAlignVertical: 'top' }]} />
+    {!!error && <Text accessibilityRole="alert" style={styles.notice}>{error}</Text>}
+  </View>;
 }
 export function Avatar({ user, large = false }: { user: PublicUser; large?: boolean }) {
   return user.avatar ? <Image source={{ uri: user.avatar }} style={[styles.avatar, large && styles.largeAvatar]} /> : <View style={[styles.avatar, large && styles.largeAvatar]}><Text style={styles.bold}>{user.name.slice(0, 1)}</Text></View>;

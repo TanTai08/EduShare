@@ -5,7 +5,6 @@ BackHandler,Image,Linking,Platform,Pressable,ScrollView,Text,useWindowDimensions
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { academicRegions,type Listing,type ListingType,type PublicUser } from '../../../../packages/contracts';
 import AdminConsole from '../admin/AdminConsole';
@@ -20,6 +19,8 @@ import { AuthScreen } from './features/auth/AuthScreen';
 import { MobileHome } from './features/catalog/MobileHome';
 import { DocumentScreen } from './features/documents/DocumentScreen';
 import { PublishScreen } from './features/publish/PublishScreen';
+import { validatePublish } from './features/publish/validation';
+import { readPickedPdf } from './features/publish/readPdf';
 import { MessagingScreen } from './features/messages/MessagingScreen';
 import { LibraryHome,StudentLibrary } from './features/catalog/LibraryHome';
 import { Workspace,palette,type Destination } from './Workspace';
@@ -64,6 +65,7 @@ export default function EduShare() {
   const [education, setEducation] = useState<EducationDraft>(emptyEducation);
   const [type, setType] = useState<ListingType>('digital');
   const [form, setForm] = useState(blank);
+  const [publishChecked, setPublishChecked] = useState(false);
   const [aiFields, setAiFields] = useState<string[]>([]);
   const [editing, setEditing] = useState('');
   const [place, setPlace] = useState('');
@@ -126,7 +128,7 @@ export default function EduShare() {
     previousToken.current = token;
     if (!previous || token) return;
     setTurns([]); setDeals([]); setSelectedDeal(''); setList([]); setContacts([]); setContactQuery(''); setDealFilter(''); setMessages([]);
-    setMessage(''); setChatDocument(null); setReviews([]); setPoints({ balance: 0, entries: [] }); setForm(blank); setAiFields([]); setEditing('');
+    setMessage(''); setChatDocument(null); setReviews([]); setPoints({ balance: 0, entries: [] }); setForm(blank); setPublishChecked(false); setAiFields([]); setEditing('');
     setProfileName(''); setAvatar(''); setEducation(emptyEducation); setEvidence(''); setReason(''); setReviewDeal(''); setPlace(''); setTime('');
     activeChat.current = ''; libraryDirty.current = false; setLibrary(emptyLibrary); setLibraryFilter(''); setLibraryQuery(''); setModerationNotices([]);
     afterLogin.current = 'home'; history.current = []; go('welcome');
@@ -203,7 +205,7 @@ export default function EduShare() {
   function showDeals(destination: 'deals' | 'notifications' = 'deals') { openWorkspacePage(destination); }
   function startPublish() {
     if (page !== 'publish' && page !== 'preview') {
-      setForm(blank); setAiFields([]); setEditing(''); setType('digital');
+      setForm(blank); setPublishChecked(false); setAiFields([]); setEditing(''); setType('digital');
     }
     secured('publish');
   }
@@ -295,15 +297,26 @@ export default function EduShare() {
   }, [token, page, api]);
   function chooseType(value: ListingType) { setType(value); }
   function formField(key: keyof typeof blank) { return (value: string) => { setForm(current => ({ ...current, [key]: value })); setAiFields(fields => key === 'cover' ? [] : fields.filter(field => field !== key)); }; }
+  const validateDraft = () => validatePublish(form, type, Boolean(editing && form.fileName));
+  function previewDraft() {
+    setPublishChecked(true);
+    setNotice('');
+    if (!Object.keys(validateDraft()).length) open('preview');
+  }
   const submit = () => run(async () => {
+    if (Object.keys(validateDraft()).length) {
+      setPublishChecked(true);
+      open('publish');
+      return;
+    }
     await api(editing ? '/documents/' + editing : '/documents', editing ? 'PATCH' : 'POST', {
       title: form.title, subject: form.subject, category: form.category, description: form.description,
       type, price: type === 'digital' ? 0 : Number(form.cost), cover: form.cover || undefined,
-      fileUrl: type === 'digital' ? form.fileUrl || undefined : undefined,
+      fileUrl: type === 'digital' ? form.fileUrl.trim() || undefined : undefined,
       pdf: type === 'digital' ? form.pdf || undefined : undefined,
       fileName: type === 'digital' ? form.fileName || undefined : undefined,
     });
-    setForm(blank); setAiFields([]); setEditing(''); open('posted');
+    setForm(blank); setPublishChecked(false); setAiFields([]); setEditing(''); open('posted');
   });
   function card(value: Listing, press?: () => void) {
     return <Pressable key={value.id} style={styles.card} onPress={press || (() => showListing(value))}>
@@ -346,14 +359,12 @@ export default function EduShare() {
       setForm(old => ({ ...old, title: result.title || old.title, subject: result.subject || old.subject, category: result.category || old.category, description: result.description || old.description }));
     });
   const pickPdf = () => void run(async () => {
-      const selected = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', multiple: false, copyToCacheDirectory: true });
-      if (selected.canceled) return;
-      const picked = selected.assets[0];
-      if ((picked.size ?? 0) > 3_000_000) throw new Error('Tệp PDF vượt quá 3 MB.');
-      const pdf = Platform.OS === 'web' ? (picked.uri.split(',')[1] || '') : await new File(picked.uri).base64();
-      if (!pdf || pdf.length > 4_000_000) throw new Error('Không đọc được PDF hoặc tệp quá lớn.');
-      setForm(current => ({ ...current, pdf, fileName: picked.name, fileUrl: '' }));
-    });
+    const selected = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', multiple: false, copyToCacheDirectory: true });
+    if (selected.canceled || !selected.assets[0]) return;
+    const picked = selected.assets[0];
+    const pdf = await readPickedPdf(picked);
+    setForm(current => ({ ...current, pdf, fileName: picked.name, fileUrl: '' }));
+  });
   const visibleDeals = !desktop || !dealFilter ? deals : deals.filter(deal =>
     deal.status === dealFilter || (dealFilter === 'scheduled' && deal.status === 'waiting'));
   const visibleContacts = desktop ? contacts.filter(user => searchable(user.name).includes(searchable(contactQuery.trim()))) : contacts;
@@ -409,10 +420,10 @@ export default function EduShare() {
           if (!back()) open('dealProgress');
           setNotice('Đã gửi đánh giá.');
         })} />}
-      {(page === 'publish' || page === 'preview' || page === 'posted') && <PublishScreen page={page} desktop={desktop} form={form} aiFields={aiFields}
+      {(page === 'publish' || page === 'preview' || page === 'posted') && <PublishScreen page={page} desktop={desktop} form={form} aiFields={aiFields} errors={publishChecked ? validateDraft() : {}}
         type={type} chooseType={chooseType} formField={formField} onCover={() => void run(async () => { const value = await pick(); if (value) formField('cover')(value); })}
         onReadCover={readCover} onPickPdf={pickPdf} onPdfUrl={value => setForm(current => ({ ...current, fileUrl: value, pdf: '', fileName: '' }))}
-        onPreview={() => open('preview')} onSubmit={() => void submit()} onEdit={() => open('publish')} onMine={() => loadList('/documents/mine', 'mine')} />}
+        onPreview={previewDraft} onSubmit={() => void submit()} onEdit={() => open('publish')} onMine={() => loadList('/documents/mine', 'mine')} />}
       {(page === 'account' || page === 'edit') && me && <AccountScreen page={page} desktop={desktop} me={me} avatar={avatar} profileName={profileName}
         setProfileName={setProfileName} education={education} setEducation={setEducation}
         onEdit={() => {
@@ -436,7 +447,7 @@ export default function EduShare() {
         list.length ? list.map(item => card(item)) : <Text>Chưa có tài liệu đã lưu.</Text>)}
       {page === 'mine' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
         {card(item)}<Text>{status[item.status]}</Text>{!!item.feedback && <Text style={styles.small}>{item.feedback}</Text>}
-        {item.status === 'revision' && <Button caption="Sửa và gửi lại" onPress={() => { setEditing(item.id); setAiFields([]); setType(item.type); setForm({ title: item.title, subject: item.subject, category: item.category, description: item.description, cover: item.cover || '', cost: String(item.price), fileUrl: item.fileUrl || '', fileName: item.fileName || '', pdf: '' }); open('publish'); }} />}
+        {item.status === 'revision' && <Button caption="Sửa và gửi lại" onPress={() => { setEditing(item.id); setPublishChecked(false); setAiFields([]); setType(item.type); setForm({ title: item.title, subject: item.subject, category: item.category, description: item.description, cover: item.cover || '', cost: String(item.price), fileUrl: item.fileUrl || '', fileName: item.fileName || '', pdf: '' }); open('publish'); }} />}
       </View>) : <Text>Chưa có bài đăng.</Text>)}
       {page === 'wallet' && <><View style={styles.hero}><Text style={styles.heading}>{points.balance} điểm khả dụng</Text></View>{points.entries.map(p => <View key={p._id} style={styles.panel}><Text style={styles.bold}>{p.amount > 0 ? '+' : ''}{p.amount} điểm</Text><Text>{p.reason}</Text></View>)}</>}
       {page === 'profile' && <><View style={styles.hero}><Avatar user={peer} /><Text style={styles.heading}>{peer.name}</Text><Text>{peer.school}</Text><Text>{reviewItems.length ? (reviewItems.reduce((sum, r) => sum + r.rating, 0) / reviewItems.length).toFixed(1) + ' ★' : 'Chưa có đánh giá'}</Text></View><Button caption="Nhắn tin" onPress={() => startChat(peer)} />{reviewItems.map(r => <View key={r._id} style={styles.panel}><Text style={styles.bold}>{r.rating} ★</Text><Text>{r.text}</Text></View>)}</>}
@@ -473,7 +484,7 @@ export default function EduShare() {
     {!desktop && ['home', 'account', 'inbox', 'saved'].includes(page) && <View style={styles.nav}>
       <Nav icon="home-outline" label="Trang chủ" press={() => open('home')} />
       <Nav icon="bookmark-outline" label="Thư viện" press={() => openWorkspacePage('saved')} />
-      <Nav icon="add-circle" label="Đăng" press={() => { setForm(blank); setAiFields([]); setEditing(''); setType('digital'); secured('publish'); }} />
+      <Nav icon="add-circle" label="Đăng" press={() => { setForm(blank); setPublishChecked(false); setAiFields([]); setEditing(''); setType('digital'); secured('publish'); }} />
       <Nav icon="chatbubble-outline" label="Chat" press={openInbox} />
       <Nav icon="person-outline" label="Hồ sơ" press={() => secured('account')} />
     </View>}
