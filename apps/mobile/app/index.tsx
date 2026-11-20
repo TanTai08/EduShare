@@ -11,6 +11,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { listingLabels, schools, type Listing, type ListingType, type PublicUser } from '../../../packages/contracts';
 import AdminConsole from '../src/admin/AdminConsole';
 import { sample } from '../src/sample';
+import { LibraryHome, ListingCard, listingCardBasis } from '../src/student/LibraryHome';
+import { Workspace, WebButton, palette, type Destination } from '../src/student/Workspace';
 
 const endpoint = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000');
 type User = PublicUser & { points: number; saved: string[]; role: 'student' | 'admin' };
@@ -30,6 +32,7 @@ type Page = 'welcome' | 'login' | 'register' | 'home' | 'detail' | 'publish' | '
 const status: Record<string, string> = { requested: 'Chờ người đăng xác nhận', scheduled: 'Đã hẹn', waiting: 'Chờ bên còn lại xác nhận', completed: 'Hoàn tất', cancelled: 'Đã hủy', pending: 'Chờ duyệt', approved: 'Đã duyệt', revision: 'Cần sửa', rejected: 'Đã từ chối', removed: 'Đã gỡ', remove: 'Đã gỡ' };
 const money = (n: number) => n.toLocaleString('vi-VN') + ' ₫';
 const price = (doc: Listing) => doc.type === 'digital' ? 'Miễn phí' : doc.type === 'sale' ? money(doc.price) : doc.price + ' điểm';
+const searchable = (value: string) => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd');
 const blank = { title: '', subject: '', category: '', description: '', cost: '', fileUrl: '', cover: '', pdf: '', fileName: '' };
 
 function Button({ caption, onPress, alt = false, fill = false }: { caption: string; onPress: () => void; alt?: boolean; fill?: boolean }) {
@@ -41,14 +44,17 @@ function Field({ label, value, change, secret = false }: { label: string; value:
 function Avatar({ user, large = false }: { user: PublicUser; large?: boolean }) {
   return user.avatar ? <Image source={{ uri: user.avatar }} style={[styles.avatar, large && styles.largeAvatar]} /> : <View style={[styles.avatar, large && styles.largeAvatar]}><Text style={styles.bold}>{user.name.slice(0, 1)}</Text></View>;
 }
-function Cover({ doc, wide = false, hero = false }: { doc: Listing; wide?: boolean; hero?: boolean }) {
-  return doc.cover ? <Image source={{ uri: doc.cover }} style={[styles.cover, wide && styles.wideCover, hero && styles.detailCover]} /> : <View style={[styles.cover, wide && styles.wideCover, hero && styles.detailCover, { backgroundColor: doc.type === 'sale' ? '#234569' : doc.type === 'points' ? '#355D53' : '#554579' }]}><Ionicons name="book-outline" color="#ffdc55" size={24} /><Text style={styles.coverTitle} numberOfLines={3}>{doc.title}</Text></View>;
+function Cover({ doc, wide = false, hero = false, desktop = false }: { doc: Listing; wide?: boolean; hero?: boolean; desktop?: boolean }) {
+  const size = [styles.cover, wide && styles.wideCover, hero && styles.detailCover, desktop && styles.desktopCover];
+  return doc.cover ? <Image source={{ uri: doc.cover }} resizeMode={desktop ? 'contain' : 'cover'} style={size} /> : <View style={[size, { backgroundColor: doc.type === 'sale' ? '#234569' : doc.type === 'points' ? '#355D53' : '#554579' }]}><Ionicons name="book-outline" color="#ffdc55" size={desktop ? 48 : 24} /><Text style={[styles.coverTitle, desktop && styles.desktopCoverTitle]} numberOfLines={3}>{doc.title}</Text></View>;
 }
 export default function EduShare() {
   const { width } = useWindowDimensions();
   const desktop = Platform.OS === 'web' && width >= 900;
   const [page, go] = useState<Page>('welcome');
   const history = useRef<Page[]>([]);
+  const scroll = useRef<ScrollView>(null);
+  const libraryStart = useRef(0);
   const afterLogin = useRef<Page>('home');
   const [token, setToken] = useState('');
   const [me, setMe] = useState<User | null>(null);
@@ -61,6 +67,7 @@ export default function EduShare() {
   const [list, setList] = useState<Listing[]>([]);
   const [doc, setDoc] = useState<Listing>(sample[0]);
   const [q, setQ] = useState('');
+  const [category, setCategory] = useState('');
   const [region, setRegion] = useState('Đà Nẵng');
   const [filter, setFilter] = useState<ListingType | ''>('');
   const [name, setName] = useState('');
@@ -121,6 +128,10 @@ export default function EduShare() {
     setNotice(''); setMessage(''); go(previous);
     return true;
   }
+  useEffect(() => {
+    if (desktop) scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [desktop, page]);
+
   function secured(next: Page) {
     if (!me) { afterLogin.current = next; open('login'); return; }
     open(next);
@@ -164,7 +175,11 @@ export default function EduShare() {
     setMe(response.user); setToken(response.token); setRegion(response.user.region); setPassword(''); setConfirmation('');
     const destination = afterLogin.current;
     afterLogin.current = 'home'; history.current = destination === 'home' ? [] : ['home'];
-    setNotice(''); go(destination);
+    setNotice(''); go('home');
+    if (response.user.role === 'student' && destination !== 'home') {
+      await loadWorkspaceData(destination, response.token);
+      go(destination);
+    }
   });
   async function pick(): Promise<string | undefined> {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.45 });
@@ -180,12 +195,51 @@ export default function EduShare() {
     setMe(null); setToken(''); setTurns([]); setDeals([]); setList([]); setModerationNotices([]);
     afterLogin.current = 'home'; open('welcome');
   });
-  function showDeals(destination: 'deals' | 'notifications' = 'deals') {
+  async function loadWorkspaceData(destination: Page, session = token) {
+    if (destination === 'saved') setList(await api<Listing[]>('/documents/saved', 'GET', undefined, session));
+    if (destination === 'inbox') setContacts(await api<PublicUser[]>('/chat', 'GET', undefined, session));
+    if (destination === 'wallet') setPoints(await api<typeof points>('/points', 'GET', undefined, session));
+    if (destination === 'deals' || destination === 'notifications') {
+      const [rows, notices] = await Promise.all([api<Deal[]>('/deals', 'GET', undefined, session),
+        destination === 'notifications' ? api<ModerationNotice[]>('/notifications/moderation', 'GET', undefined, session) : Promise.resolve([])]);
+      setDeals(rows); setModerationNotices(notices);
+    }
+  }
+  function openWorkspacePage(destination: Page) {
     if (!me) { secured(destination); return; }
+    void run(async () => { await loadWorkspaceData(destination); open(destination); });
+  }
+  function showDeals(destination: 'deals' | 'notifications' = 'deals') { openWorkspacePage(destination); }
+  function startPublish() {
+    if (page !== 'publish' && page !== 'preview') {
+      setForm(blank); setAiFields([]); setEditing(''); setType('digital');
+    }
+    secured('publish');
+  }
+  function showListing(value: Listing) { setDoc(value); open('detail'); }
+  function clearCatalog() { setQ(''); setCategory(''); setFilter(''); }
+  function submitSearch() {
+    setCategory(''); setFilter('');
+    if (page !== 'home') open('home');
+    else scroll.current?.scrollTo({ y: libraryStart.current, animated: true });
+  }
+  function openPdf() {
+    if (busy) return;
+    const popup = Platform.OS === 'web' ? window.open('about:blank', '_blank') : null;
+    if (popup) popup.opener = null;
     void run(async () => {
-      const [rows, notices] = await Promise.all([api<Deal[]>('/deals'),
-        destination === 'notifications' ? api<ModerationNotice[]>('/notifications/moderation') : Promise.resolve([])]);
-      setDeals(rows); setModerationNotices(notices); open(destination);
+      try {
+        const target = doc.id.startsWith('sample') ? { url: doc.fileUrl } :
+          await api<{ url?: string; path?: string }>('/documents/' + doc.id + '/open', 'POST');
+        const url = target.url || (target.path ? endpoint + target.path : '');
+        if (!url) throw new Error('Chưa có tệp PDF.');
+        if (popup) popup.location.replace(url);
+        else await Linking.openURL(url);
+        open('pdfOpened');
+      } catch (error) {
+        popup?.close();
+        throw error;
+      }
     });
   }
   useEffect(() => {
@@ -218,69 +272,122 @@ export default function EduShare() {
     setForm(blank); setAiFields([]); setEditing(''); open('posted');
   });
   function card(value: Listing, press?: () => void) {
-    return <Pressable key={value.id} style={styles.card} onPress={press || (() => { setDoc(value); open('detail'); })}>
-      <Cover doc={value} /><View style={styles.flex}><Text style={styles.bold}>{value.title}</Text><Text style={styles.small}>{value.owner.name}</Text><Text style={styles.small}>{value.owner.school}</Text><Text style={styles.price}>{price(value)}</Text></View>
+    return <Pressable key={value.id} style={styles.card} onPress={press || (() => showListing(value))}>
+      <Cover doc={value} /><View style={styles.flex}><Text style={styles.bold}>{value.title}</Text><Text style={styles.small}>{value.owner?.name}</Text><Text style={styles.small}>{value.owner?.school}</Text><Text style={styles.price}>{price(value)}</Text></View>
     </Pressable>;
   }
-  function toggleFilter(value: ListingType) { setQ(''); setFilter(current => current === value ? '' : value); }
-  const matches = items.filter(item => [item.title, item.subject, item.category, item.owner?.school || ''].some(v => v.toLowerCase().includes(q.toLowerCase())));
+  function toggleFilter(value: ListingType) { setQ(''); setCategory(''); setFilter(current => current === value ? '' : value); }
+  const keyword = desktop ? searchable(q.trim()) : q.toLowerCase();
+  const matches = items.filter(item => {
+    const values = [item.title, item.subject, item.category, item.owner?.school];
+    if (desktop) values.push(item.owner?.name);
+    const matchesKeyword = values.some(value => (desktop ? searchable(value || '') : (value || '').toLowerCase()).includes(keyword));
+    return matchesKeyword && (!desktop || !category || searchable(item.category || '').includes(searchable(category)));
+  });
   if (me?.role === 'admin') return <AdminConsole api={api} endpoint={endpoint} me={me} logout={logout} logoutBusy={busy} logoutError={notice} />;
   if (page === 'welcome' || page === 'login' || page === 'register') {
     const welcome = page === 'welcome';
     const register = page === 'register';
     const title = register ? 'Đăng ký' : 'Đăng nhập';
-    return <SafeAreaView style={[authStyles.shell, !welcome && authStyles.yellow]} edges={['top']}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={authStyles.scroll}>
-        {welcome ? <>
-          <View style={authStyles.intro}>
-            <View style={authStyles.illustration}><Ionicons name="library" size={74} color="#26396e" /><Ionicons name="school" size={39} color="#26396e" /></View>
-            <Text style={authStyles.brand}>EduShare</Text><Text style={authStyles.muted}>Tài liệu học tập cho sinh viên</Text>
+    function leaveAuth() {
+      const previous = history.current.at(-1);
+      if (previous !== 'login' && previous !== 'register') afterLogin.current = 'home';
+      if (!desktop || !back()) open('welcome');
+    }
+    return <SafeAreaView style={[authStyles.shell, !welcome && authStyles.yellow, desktop && styles.webShell]} edges={['top']}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[authStyles.scroll, desktop && authStyles.webAuth]}>
+        {desktop && <View style={authStyles.webArt}>
+          <Image source={require('../assets/library-hero.webp')} style={authStyles.webArtImage} resizeMode="cover" />
+          <View style={authStyles.webArtText}><View style={styles.brandIcon}><Ionicons name="book-outline" size={18} color={palette.navy} /></View>
+            <Text style={authStyles.webBrand}>EduShare</Text>
+            <Text style={authStyles.webDescription}>Tài liệu học tập cho sinh viên</Text>
           </View>
-          <View style={authStyles.welcomePanel}>
-            <Text style={authStyles.title}>Chào mừng!</Text>
-            <Text style={authStyles.description}>Mua, trao đổi và tải tài liệu học tập cùng cộng đồng sinh viên.</Text>
-            <View style={authStyles.actions}>
-              <AuthButton caption="Đăng nhập" press={() => open('login')} />
-              <AuthButton caption="Đăng ký" light press={() => open('register')} />
+        </View>}
+        <View style={desktop ? authStyles.webAuthMain : styles.authMain}>
+          {welcome ? <>
+            {!desktop && <View style={authStyles.intro}>
+              <View style={authStyles.illustration}><Ionicons name="library" size={74} color="#26396e" /><Ionicons name="school" size={39} color="#26396e" /></View>
+              <Text style={authStyles.brand}>EduShare</Text><Text style={authStyles.muted}>Tài liệu học tập cho sinh viên</Text>
+            </View>}
+            <View style={[authStyles.welcomePanel, desktop && authStyles.webWelcome]}>
+              <Text accessibilityRole={desktop ? 'header' : undefined} style={authStyles.title}>Chào mừng!</Text>
+              <Text style={authStyles.description}>Mua, trao đổi và tải tài liệu học tập cùng cộng đồng sinh viên.</Text>
+              <View style={authStyles.actions}>
+                <AuthButton caption="Đăng nhập" press={() => open('login')} />
+                <AuthButton caption="Đăng ký" light press={() => open('register')} />
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => open('home')}><Text style={authStyles.guest}>Khám phá tài liệu</Text></Pressable>
             </View>
-            <Pressable accessibilityRole="button" onPress={() => open('home')}><Text style={authStyles.guest}>Khám phá tài liệu</Text></Pressable>
-          </View>
-        </> : <>
-          <View style={authStyles.header}>
-            <View style={authStyles.headerRow}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" hitSlop={12} onPress={() => open('welcome')}><Ionicons name="arrow-back" size={22} color="#151512" /></Pressable>
-              <Pressable accessibilityRole="button" onPress={() => { setSchoolsOpen(false); open(register ? 'login' : 'register'); }}><Text style={authStyles.link}>{register ? 'Đăng nhập' : 'Đăng ký'}</Text></Pressable>
+          </> : <>
+            <View style={[authStyles.header, desktop && authStyles.webAuthHeader]}>
+              <View style={authStyles.headerRow}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" hitSlop={12} onPress={leaveAuth}><Ionicons name="arrow-back" size={22} color="#151512" /></Pressable>
+                <Pressable accessibilityRole="button" onPress={() => { setSchoolsOpen(false); open(register ? 'login' : 'register'); }}><Text style={authStyles.link}>{register ? 'Đăng nhập' : 'Đăng ký'}</Text></Pressable>
+              </View>
+              <Text accessibilityRole={desktop ? 'header' : undefined} style={authStyles.title}>{title}</Text>
+              <Text style={authStyles.description}>{register ? 'Tạo tài khoản để chia sẻ tài liệu học tập.' : 'Chào mừng bạn trở lại EduShare.'}</Text>
             </View>
-            <Text style={authStyles.title}>{title}</Text>
-            <Text style={authStyles.description}>{register ? 'Tạo tài khoản để chia sẻ tài liệu học tập.' : 'Chào mừng bạn trở lại EduShare.'}</Text>
-          </View>
-          <View style={authStyles.form}>
-            {register && <AuthInput label="Họ và tên" value={name} change={setName} />}
-            <AuthInput label="Email sinh viên" value={email} change={setEmail} email />
-            <AuthInput label="Mật khẩu" value={password} change={setPassword} secret />
-            {register && <>
-              <AuthInput label="Xác nhận mật khẩu" value={confirmation} change={setConfirmation} secret />
-              <Pressable accessibilityRole="button" accessibilityState={{ expanded: schoolsOpen }} style={authStyles.school} onPress={() => setSchoolsOpen(value => !value)}>
-                <Text style={authStyles.schoolText}>{schools.find(s => s.id === schoolId)?.name}</Text><Ionicons name={schoolsOpen ? 'chevron-up' : 'chevron-down'} size={16} />
-              </Pressable>
-              {schoolsOpen && schools.map(s => <Pressable key={s.id} accessibilityRole="button" accessibilityState={{ selected: s.id === schoolId }} style={authStyles.school} onPress={() => { setSchool(s.id); setSchoolsOpen(false); }}>
-                <Text style={authStyles.schoolText}>{s.name}</Text>{s.id === schoolId && <Ionicons name="checkmark" size={18} />}
-              </Pressable>)}
-            </>}
-            {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
-            <View style={authStyles.submit}><AuthButton caption={busy ? 'Đang xử lý…' : title} press={authenticate} disabled={busy} /></View>
-          </View>
-        </>}
+            <View style={[authStyles.form, desktop && authStyles.webAuthForm]}>
+              {register && <AuthInput label="Họ và tên" value={name} change={setName} />}
+              <AuthInput label="Email sinh viên" value={email} change={setEmail} email />
+              <AuthInput label="Mật khẩu" value={password} change={setPassword} secret />
+              {register && <>
+                <AuthInput label="Xác nhận mật khẩu" value={confirmation} change={setConfirmation} secret />
+                <Pressable accessibilityRole="button" accessibilityState={{ expanded: schoolsOpen }} style={authStyles.school} onPress={() => setSchoolsOpen(value => !value)}>
+                  <Text style={authStyles.schoolText}>{schools.find(s => s.id === schoolId)?.name}</Text><Ionicons name={schoolsOpen ? 'chevron-up' : 'chevron-down'} size={16} />
+                </Pressable>
+                {schoolsOpen && schools.map(s => <Pressable key={s.id} accessibilityRole="button" accessibilityState={{ selected: s.id === schoolId }} style={authStyles.school} onPress={() => { setSchool(s.id); setSchoolsOpen(false); }}>
+                  <Text style={authStyles.schoolText}>{s.name}</Text>{s.id === schoolId && <Ionicons name="checkmark" size={18} />}
+                </Pressable>)}
+              </>}
+              {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
+              <View style={authStyles.submit}><AuthButton caption={busy ? 'Đang xử lý…' : title} press={authenticate} disabled={busy} /></View>
+            </View>
+          </>}
+        </View>
       </ScrollView>
     </SafeAreaView>;
   }
   const heading: Partial<Record<Page, string>> = { login: 'Đăng nhập', register: 'Đăng ký', detail: 'Chi tiết tài liệu', publish: 'Đăng tài liệu', preview: 'Xem trước bài đăng', posted: 'Đã gửi duyệt', account: 'Hồ sơ của tôi', saved: 'Tài liệu đã lưu', mine: 'Bài đăng của tôi', deals: 'Lịch sử giao dịch', appointment: 'Đặt lịch nhận', wallet: 'Ví điểm', inbox: 'Tin nhắn', chat: peer.name, profile: 'Hồ sơ công khai', assistant: 'Trợ lý AI', report: 'Báo cáo tài liệu', edit: 'Chỉnh sửa hồ sơ', review: 'Đánh giá giao dịch', region: 'Khu vực giao dịch', notifications: 'Thông báo', dealProgress: 'Tiến trình giao dịch', pdfOpened: 'Tài liệu PDF', reportSent: 'Đã gửi báo cáo' };
-  return <SafeAreaView style={styles.shell}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, desktop && page === 'home' && styles.webHome]}>
-      {heading[page] && <Pressable accessibilityRole="button" onPress={() => { if (!back()) open('home'); }} style={styles.row}><Ionicons name="arrow-back" size={22} /><Text style={styles.heading}>{heading[page]}</Text></Pressable>}
+  const destinations: Destination[] = [
+    { key: 'home', label: 'Trang chủ', icon: 'home-outline', open: () => { clearCatalog(); open('home'); scroll.current?.scrollTo({ y: 0 }); } },
+    { key: 'saved', label: 'Thư viện', icon: 'bookmark-outline', open: () => openWorkspacePage('saved') },
+    { key: 'publish', label: 'Đăng tài liệu', icon: 'add-circle-outline', open: startPublish },
+    { key: 'inbox', label: 'Tin nhắn', icon: 'chatbubble-outline', open: () => openWorkspacePage('inbox') },
+    { key: 'deals', label: 'Giao dịch', icon: 'swap-horizontal-outline', open: () => showDeals() },
+    { key: 'assistant', label: 'Trợ lý AI', icon: 'sparkles-outline', open: () => secured('assistant') },
+    { key: 'account', label: 'Hồ sơ', icon: 'person-circle-outline', open: () => secured('account') },
+  ];
+  const active = ['preview', 'posted'].includes(page) ? 'publish' : ['edit', 'mine', 'wallet'].includes(page) ? 'account' :
+    page === 'chat' ? 'inbox' : ['appointment', 'dealProgress', 'review'].includes(page) ? 'deals' : page;
+  const isWidePage = ['home', 'saved', 'detail', 'account', 'publish'].includes(page);
+  const seller = page === 'detail' && <>
+    <View style={styles.detailPanel}>
+      <Text style={styles.bold}>{price(doc)}</Text>
+      <Text style={styles.small}>{doc.type === 'sale' ? 'Trả trực tiếp khi nhận' : doc.type === 'points' ? 'Giữ điểm khi đặt hẹn' : 'Xem và tải miễn phí'}</Text>
+    </View>
+    {doc.owner && <Pressable accessibilityRole="button" accessibilityLabel={'Xem hồ sơ ' + doc.owner.name} style={styles.card} onPress={() => showPeer(doc.owner)}>
+      <Avatar user={doc.owner} />
+      <View style={styles.flex}><Text style={styles.bold}>{doc.owner.name}</Text><Text style={styles.small}>{doc.owner.school}</Text></View>
+      <Ionicons name="chevron-forward" size={18} />
+    </Pressable>}
+  </>;
+  const content = (
+    <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" style={desktop && styles.webScroll}
+      contentContainerStyle={[styles.content, desktop && (isWidePage ? styles.webWide : styles.webPage)]}>
+      {heading[page] && (desktop ? <View style={styles.webHeading}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" onPress={() => { if (!back()) open('home'); }} style={styles.webBack}><Ionicons name="arrow-back" size={19} color={palette.navy} /></Pressable>
+        <Text accessibilityRole="header" aria-level={1} style={styles.webTitle}>{heading[page]}</Text>
+      </View> : <Pressable accessibilityRole="button" onPress={() => { if (!back()) open('home'); }} style={styles.row}><Ionicons name="arrow-back" size={22} /><Text style={styles.heading}>{heading[page]}</Text></Pressable>)}
       {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
-      {busy && <Text style={styles.small}>Đang xử lý…</Text>}
-      {page === 'home' && <>
+      {busy && <Text aria-live="polite" style={styles.small}>Đang xử lý…</Text>}
+      {page === 'home' && desktop && <LibraryHome rows={matches} status={catalogState} width={width} region={region} filter={filter}
+        keyword={q} category={category} onCategory={value => { setFilter(''); setQ(''); setCategory(current => current === value ? '' : value); }}
+        onFilter={toggleFilter} onReset={clearCatalog} onRetry={() => setCatalogRefresh(n => n + 1)}
+        onChat={() => openWorkspacePage('inbox')} onRegion={() => open('region')} onAssistant={() => secured('assistant')}
+        onBrowse={() => scroll.current?.scrollTo({ y: libraryStart.current, animated: true })}
+        onCatalogLayout={offset => { libraryStart.current = offset; }} onOpen={showListing} />}
+      {page === 'home' && !desktop && <>
         <View style={styles.row}><View style={styles.brandIcon}><Ionicons name="book-outline" size={18} color="#171815" /></View><Text style={[styles.brandSmall, styles.flex]}>EduShare</Text><Pressable accessibilityRole="button" accessibilityLabel="Thông báo" hitSlop={10} onPress={() => showDeals('notifications')}><Ionicons name="notifications-outline" size={23} color="#203448" /></Pressable></View>
         <View style={styles.search}>
           <Ionicons name="search-outline" size={20} color="#203448" />
@@ -333,25 +440,27 @@ export default function EduShare() {
       {page === 'notifications' && (deals.length ? deals.map(deal => <Pressable accessibilityRole="button" key={deal._id} style={styles.panel} onPress={() => { setSelectedDeal(deal._id); open('dealProgress'); }}>
         <Text style={styles.bold}>{status[deal.status]}</Text><Text>{deal.document?.title || 'Tài liệu'}</Text><Text style={styles.small}>{deal.counterparty?.name} · {deal.time}</Text>
       </Pressable>) : !moderationNotices.length && <Text>Chưa có thông báo.</Text>)}
-      {page === 'detail' && <>
-        <Cover doc={doc} hero />
-        <Text style={styles.detailTitle}>{doc.title}</Text>
-        <Text style={styles.small}>{doc.type === 'digital' ? 'Tài liệu số · PDF online' : 'Bản in · Nhận tại ' + doc.owner.region}</Text>
-        <View style={styles.detailPanel}><Text style={styles.bold}>{price(doc)}</Text><Text style={styles.small}>{doc.type === 'sale' ? 'Trả trực tiếp khi nhận' : doc.type === 'points' ? 'Giữ điểm khi đặt hẹn' : 'Xem và tải miễn phí'}</Text></View>
-        <Pressable accessibilityRole="button" style={styles.card} onPress={() => showPeer(doc.owner)}>
-          <Avatar user={doc.owner} /><View style={styles.flex}><Text style={styles.bold}>{doc.owner.name}</Text><Text style={styles.small}>{doc.owner.school}</Text></View><Ionicons name="chevron-forward" size={18} />
-        </Pressable>
-        <View style={styles.detailPanel}><Text style={styles.bold}>Nội dung tài liệu</Text><Text style={styles.body}>{doc.description}</Text></View>
-        {doc.type === 'digital' ? <Button caption="Mở PDF miễn phí" onPress={() => void run(async () => { if (doc.id.startsWith('sample')) { if (!doc.fileUrl) throw new Error('Chưa có tệp PDF.'); await Linking.openURL(doc.fileUrl); } else { const target = await api<{ url?: string; path?: string }>('/documents/' + doc.id + '/open', 'POST'); await Linking.openURL(target.url || endpoint + target.path); } open('pdfOpened'); })} /> :
-          <View style={styles.splitActions}><Button caption="Nhắn tin" alt fill onPress={() => startChat(doc.owner, doc)} /><Button fill caption={doc.type === 'sale' ? 'Đặt lịch · ' + price(doc) : 'Giữ chỗ · ' + price(doc)} onPress={() => { if (me && doc.owner.id === me.id) { setNotice('Đây là tài liệu của bạn.'); return; }
-          if (me && doc.owner.region !== me.region) { setNotice('Tài liệu này giao nhận tại ' + doc.owner.region + '. Hãy chọn tài liệu cùng khu vực với trường của bạn.'); return; }
-          setPlace(''); setTime(''); secured('appointment'); }} /></View>}
-        <Button caption={me?.saved.includes(doc.id) ? 'Bỏ lưu tài liệu' : 'Lưu tài liệu'} alt onPress={() => { if (!me) { open('login'); return; } void run(async () => {
-          const { saved } = await api<{ saved: boolean }>('/documents/' + doc.id + '/save', 'POST', { saved: !me.saved.includes(doc.id) });
-          setMe({ ...me, saved: saved ? [...me.saved, doc.id] : me.saved.filter(id => id !== doc.id) });
-        }); }} />
-        <Button caption="Báo cáo tài liệu" alt onPress={() => { setReason(''); setEvidence(''); secured('report'); }} />
-      </>}
+      {page === 'detail' && <View style={desktop ? styles.webSplit : styles.detailStack}>
+          <View style={[styles.detailStack, desktop && styles.webPrimary]}>
+            <Cover doc={doc} hero desktop={desktop} />
+            <Text accessibilityRole={desktop ? 'header' : undefined} style={styles.detailTitle}>{doc.title}</Text>
+            <Text style={styles.small}>{doc.type === 'digital' ? 'Tài liệu số · PDF online' : 'Bản in' + (doc.owner?.region ? ' · Nhận tại ' + doc.owner.region : '')}</Text>
+            {!desktop && seller}
+            <View style={styles.detailPanel}><Text style={styles.bold}>Nội dung tài liệu</Text><Text style={styles.body}>{doc.description}</Text></View>
+          </View>
+          <View style={[styles.detailStack, desktop && styles.webSecondary]}>
+            {desktop && seller}
+            {doc.type === 'digital' ? <Button caption="Mở PDF miễn phí" onPress={openPdf} /> :
+              doc.owner && <View style={styles.splitActions}><Button caption="Nhắn tin" alt fill onPress={() => startChat(doc.owner, doc)} /><Button fill caption={doc.type === 'sale' ? 'Đặt lịch · ' + price(doc) : 'Giữ chỗ · ' + price(doc)} onPress={() => { if (me && doc.owner.id === me.id) { setNotice('Đây là tài liệu của bạn.'); return; }
+              if (me && doc.owner.region !== me.region) { setNotice('Tài liệu này giao nhận tại ' + doc.owner.region + '. Hãy chọn tài liệu cùng khu vực với trường của bạn.'); return; }
+              setPlace(''); setTime(''); secured('appointment'); }} /></View>}
+            <Button caption={me?.saved.includes(doc.id) ? 'Bỏ lưu tài liệu' : 'Lưu tài liệu'} alt onPress={() => { if (!me) { open('login'); return; } void run(async () => {
+              const { saved } = await api<{ saved: boolean }>('/documents/' + doc.id + '/save', 'POST', { saved: !me.saved.includes(doc.id) });
+              setMe({ ...me, saved: saved ? [...me.saved, doc.id] : me.saved.filter(id => id !== doc.id) });
+            }); }} />
+            <Button caption="Báo cáo tài liệu" alt onPress={() => { setReason(''); setEvidence(''); secured('report'); }} />
+          </View>
+        </View>}
       {page === 'pdfOpened' && <>
         <View style={styles.hero}><Ionicons name="document-text-outline" size={44} color="#203448" /><Text style={styles.heading}>{doc.title}</Text><Text style={styles.small}>Tệp được mở bằng trình xem PDF của thiết bị.</Text></View>
         <Button caption="Về chi tiết tài liệu" onPress={() => { if (!back()) open('detail'); }} />
@@ -381,49 +490,60 @@ export default function EduShare() {
         {deal.status === 'completed' && <Button caption="Đánh giá" onPress={() => { setReviewDeal(deal._id); setRating(5); open('review'); }} alt />}
       </View>)}
       {page === 'review' && <><View style={styles.wrap}>{[1, 2, 3, 4, 5].map(n => <Button key={n} caption={n + ' ★'} alt={rating !== n} onPress={() => setRating(n)} />)}</View><Field label="Nhận xét" value={message} change={setMessage} /><Button caption="Gửi đánh giá" onPress={() => void run(async () => { await api('/reviews', 'POST', { deal: reviewDeal, rating, text: message }); if (!back()) open('dealProgress'); setNotice('Đã gửi đánh giá.'); })} /></>}
-      {page === 'publish' && <>
-        {form.cover && <View style={styles.aiBanner}><Image source={{ uri: form.cover }} style={styles.aiCover} /><View style={styles.flex}><Text style={styles.bold}>{aiFields.length ? 'Đã đọc xong ảnh bìa' : 'Ảnh bìa tài liệu'}</Text><Text style={styles.small}>{aiFields.length ? 'Bạn có thể sửa các ô đã được AI điền.' : 'Dùng AI để gợi ý thông tin.'}</Text></View></View>}
-        <Button caption="Chọn ảnh bìa" alt onPress={() => void run(async () => { const value = await pick(); if (value) formField('cover')(value); })} />
-        {!!form.cover && <Button caption="Đọc ảnh bằng AI" onPress={() => void run(async () => {
-          const result = await api<Partial<typeof blank>>('/ai/cover', 'POST', { cover: form.cover });
-          setAiFields(Object.entries(result).filter(([, value]) => Boolean(value)).map(([key]) => key));
-          setForm(old => ({ ...old, title: result.title || old.title, subject: result.subject || old.subject, category: result.category || old.category, description: result.description || old.description }));
-        })} alt />}
-        {([['title','Tên tài liệu'],['subject','Môn học'],['category','Danh mục'],['description','Mô tả']] as const).map(([key, label]) => <Field key={key} label={aiFields.includes(key) ? label + ' · AI' : label} value={form[key]} change={formField(key)} />)}
-        <View style={styles.wrap}>{(Object.keys(listingLabels) as ListingType[]).map(value => <Button key={value} caption={listingLabels[value]} onPress={() => chooseType(value)} alt={value !== type} />)}</View>
-        {type === 'digital' ? <>
-          <Button caption={form.fileName || 'Chọn tệp PDF (tối đa 3 MB)'} alt onPress={() => void run(async () => {
-            const selected = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', multiple: false, copyToCacheDirectory: true });
-            if (selected.canceled) return;
-            const picked = selected.assets[0];
-            if ((picked.size ?? 0) > 3_000_000) throw new Error('Tệp PDF vượt quá 3 MB.');
-            const pdf = Platform.OS === 'web' ? (picked.uri.split(',')[1] || '') : await new File(picked.uri).base64();
-            if (!pdf || pdf.length > 4_000_000) throw new Error('Không đọc được PDF hoặc tệp quá lớn.');
-            setForm(current => ({ ...current, pdf, fileName: picked.name, fileUrl: '' }));
-          })} />
-          <Field label="Hoặc liên kết HTTPS đến PDF" value={form.fileUrl} change={value => setForm(current => ({ ...current, fileUrl: value, pdf: '', fileName: '' }))} />
-        </> : <Field label={type === 'sale' ? 'Giá bán (VNĐ)' : 'Điểm cần dùng'} value={form.cost} change={formField('cost')} />}
-        <Button caption="Xem trước" onPress={() => open('preview')} />
-      </>}
+      {page === 'publish' && <View style={desktop ? styles.webSplit : styles.detailStack}>
+        <View style={[styles.detailStack, desktop && styles.webSecondary]}>
+          {desktop && <Text accessibilityRole="header" style={styles.heading}>Ảnh bìa tài liệu</Text>}
+          {form.cover && <View style={styles.aiBanner}><Image source={{ uri: form.cover }} style={styles.aiCover} /><View style={styles.flex}><Text style={styles.bold}>{aiFields.length ? 'Đã đọc xong ảnh bìa' : 'Ảnh bìa tài liệu'}</Text><Text style={styles.small}>{aiFields.length ? 'Bạn có thể sửa các ô đã được AI điền.' : 'Dùng AI để gợi ý thông tin.'}</Text></View></View>}
+          <Button caption="Chọn ảnh bìa" alt onPress={() => void run(async () => { const value = await pick(); if (value) formField('cover')(value); })} />
+          {!!form.cover && <Button caption="Đọc ảnh bằng AI" onPress={() => void run(async () => {
+            const result = await api<Partial<typeof blank>>('/ai/cover', 'POST', { cover: form.cover });
+            setAiFields(Object.entries(result).filter(([, value]) => Boolean(value)).map(([key]) => key));
+            setForm(old => ({ ...old, title: result.title || old.title, subject: result.subject || old.subject, category: result.category || old.category, description: result.description || old.description }));
+          })} alt />}
+        </View>
+        <View style={[styles.detailStack, desktop && styles.webPrimary]}>
+          {desktop && <Text accessibilityRole="header" style={styles.heading}>Thông tin tài liệu</Text>}
+          {([['title','Tên tài liệu'],['subject','Môn học'],['category','Danh mục'],['description','Mô tả']] as const).map(([key, label]) => <Field key={key} label={aiFields.includes(key) ? label + ' · AI' : label} value={form[key]} change={formField(key)} />)}
+          <View style={styles.wrap}>{(Object.keys(listingLabels) as ListingType[]).map(value => <Button key={value} caption={listingLabels[value]} onPress={() => chooseType(value)} alt={value !== type} />)}</View>
+          {type === 'digital' ? <>
+            <Button caption={form.fileName || 'Chọn tệp PDF (tối đa 3 MB)'} alt onPress={() => void run(async () => {
+              const selected = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', multiple: false, copyToCacheDirectory: true });
+              if (selected.canceled) return;
+              const picked = selected.assets[0];
+              if ((picked.size ?? 0) > 3_000_000) throw new Error('Tệp PDF vượt quá 3 MB.');
+              const pdf = Platform.OS === 'web' ? (picked.uri.split(',')[1] || '') : await new File(picked.uri).base64();
+              if (!pdf || pdf.length > 4_000_000) throw new Error('Không đọc được PDF hoặc tệp quá lớn.');
+              setForm(current => ({ ...current, pdf, fileName: picked.name, fileUrl: '' }));
+            })} />
+            <Field label="Hoặc liên kết HTTPS đến PDF" value={form.fileUrl} change={value => setForm(current => ({ ...current, fileUrl: value, pdf: '', fileName: '' }))} />
+          </> : <Field label={type === 'sale' ? 'Giá bán (VNĐ)' : 'Điểm cần dùng'} value={form.cost} change={formField('cost')} />}
+          <Button caption="Xem trước" onPress={() => open('preview')} />
+        </View>
+      </View>}
       {page === 'preview' && <>{form.cover && <Image source={{ uri: form.cover }} style={styles.picture} />}<Text style={styles.heading}>{form.title}</Text><Text>{form.subject} · {form.category}</Text><Text>{form.description}</Text><Text style={styles.price}>{type === 'sale' ? money(Number(form.cost)) + ' · Trả trực tiếp' : type === 'points' ? form.cost + ' điểm' : 'Miễn phí'}</Text><Button caption="Gửi bài để duyệt" onPress={() => void submit()} /><Button caption="Chỉnh sửa" alt onPress={() => open('publish')} /></>}
       {page === 'posted' && <View style={styles.hero}><Ionicons name="checkmark-circle" size={50} color="#287248" /><Text style={styles.heading}>Tài liệu đang chờ duyệt</Text><Button caption="Bài đăng của tôi" onPress={() => loadList('/documents/mine', 'mine')} /></View>}
-      {page === 'account' && me && <>
-        <View style={styles.accountHero}>
+      {page === 'account' && me && <View style={desktop ? styles.webSplit : styles.detailStack}>
+        <View style={[styles.accountHero, desktop && styles.webSecondary]}>
           <Pressable accessibilityRole="button" accessibilityLabel="Đổi ảnh đại diện" onPress={() => { setProfileName(me.name); setAvatar(me.avatar || ''); open('edit'); }}>
             <Avatar user={me} large />
             <View style={styles.avatarCamera}><Ionicons name="camera-outline" size={16} color="#171815" /></View>
           </Pressable>
           <Text style={styles.detailTitle}>{me.name}</Text><Text style={styles.small}>{me.school}</Text>
         </View>
-        <AccountRow glyph="person-outline" caption="Chỉnh sửa hồ sơ" press={() => { setProfileName(me.name); setAvatar(me.avatar || ''); open('edit'); }} />
-        <AccountRow glyph="bookmark-outline" caption="Tài liệu đã lưu" press={() => loadList('/documents/saved', 'saved')} />
-        <AccountRow glyph="book-outline" caption="Bài đăng của tôi" press={() => loadList('/documents/mine', 'mine')} />
-        <AccountRow glyph="swap-horizontal-outline" caption="Lịch sử giao dịch" press={() => showDeals()} />
-        <AccountRow glyph="star-outline" caption="Ví điểm" press={() => void run(async () => { setPoints(await api<typeof points>('/points')); open('wallet'); })} />
-        <Button caption="Đăng xuất" onPress={logout} />
-      </>}
+        <View style={[styles.detailStack, desktop && styles.webPrimary]}>
+          <AccountRow glyph="person-outline" caption="Chỉnh sửa hồ sơ" press={() => { setProfileName(me.name); setAvatar(me.avatar || ''); open('edit'); }} />
+          <AccountRow glyph="bookmark-outline" caption="Tài liệu đã lưu" press={() => loadList('/documents/saved', 'saved')} />
+          <AccountRow glyph="book-outline" caption="Bài đăng của tôi" press={() => loadList('/documents/mine', 'mine')} />
+          <AccountRow glyph="swap-horizontal-outline" caption="Lịch sử giao dịch" press={() => showDeals()} />
+          <AccountRow glyph="star-outline" caption="Ví điểm" press={() => openWorkspacePage('wallet')} />
+          <Button caption="Đăng xuất" onPress={logout} />
+        </View>
+      </View>}
       {page === 'edit' && me && <><Avatar user={{ ...me, avatar }} /><Button caption="Thay ảnh đại diện" alt onPress={() => void run(async () => { const value = await pick(); if (value) setAvatar(value); })} /><Field label="Họ và tên" value={profileName} change={setProfileName} /><Button caption="Lưu thay đổi" onPress={() => void run(async () => { setMe(await api<User>('/me', 'PATCH', { name: profileName, avatar: avatar || undefined })); open('account'); })} /></>}
-      {page === 'saved' && (list.length ? list.map(item => card(item)) : <Text>Chưa có tài liệu đã lưu.</Text>)}
+      {page === 'saved' && (list.length ? desktop ? <View style={styles.webGrid}>{list.map(item => <ListingCard key={item.id} item={item}
+        size={listingCardBasis(width)} onOpen={() => showListing(item)} />)}</View> : list.map(item => card(item)) :
+        desktop ? <View style={styles.webEmpty}><Ionicons name="bookmark-outline" size={26} color={palette.muted} /><Text style={styles.bold}>Chưa có tài liệu đã lưu</Text>
+          <WebButton title="Khám phá tài liệu" onPress={() => open('home')} /></View> : <Text>Chưa có tài liệu đã lưu.</Text>)}
       {page === 'mine' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
         {card(item)}<Text>{status[item.status]}</Text>{!!item.feedback && <Text style={styles.small}>{item.feedback}</Text>}
         {item.status === 'revision' && <Button caption="Sửa và gửi lại" onPress={() => { setEditing(item.id); setAiFields([]); setType(item.type); setForm({ title: item.title, subject: item.subject, category: item.category, description: item.description, cover: item.cover || '', cost: String(item.price), fileUrl: item.fileUrl || '', fileName: item.fileName || '', pdf: '' }); open('publish'); }} />}
@@ -460,7 +580,13 @@ export default function EduShare() {
         <Button caption="Về chi tiết tài liệu" onPress={() => { history.current.pop(); if (!back()) open('detail'); }} />
       </>}
     </ScrollView>
-    {['home', 'account', 'inbox', 'saved'].includes(page) && <View style={[styles.nav, desktop && styles.webNav]}>
+  );
+  return <SafeAreaView style={[styles.shell, desktop && styles.webShell]}>
+    {desktop ? <Workspace title={heading[page] || 'Trang chủ'} active={active} destinations={destinations} user={me} region={region}
+      home={destinations[0].open} changeRegion={() => open('region')} notifications={() => showDeals('notifications')}
+      account={() => secured('account')} register={() => open('register')}
+      search={{ value: q, change: setQ, submit: submitSearch }}>{content}</Workspace> : content}
+    {!desktop && ['home', 'account', 'inbox', 'saved'].includes(page) && <View style={styles.nav}>
       <Nav icon="home-outline" label="Trang chủ" press={() => open('home')} />
       <Nav icon="bookmark-outline" label="Thư viện" press={() => me ? loadList('/documents/saved', 'saved') : open('login')} />
       <Nav icon="add-circle" label="Đăng" press={() => { setForm(blank); setAiFields([]); setEditing(''); setType('digital'); secured('publish'); }} />
@@ -483,6 +609,16 @@ function AuthButton({ caption, press, light, disabled }: { caption: string; pres
 }
 const authStyles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: '#fff' },
+  webAuth: { maxWidth: 1060, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 30, gap: 22 },
+  webArt: { width: '50%', minHeight: 550, backgroundColor: palette.navy, overflow: 'hidden', borderRadius: 18, justifyContent: 'flex-end' },
+  webArtImage: { position: 'absolute', width: '100%', height: '100%' },
+  webArtText: { alignSelf: 'stretch', gap: 7, backgroundColor: '#203448ed', padding: 22 },
+  webBrand: { fontSize: 31, color: 'white', fontWeight: '900' },
+  webDescription: { fontSize: 14, color: '#dce8f2' },
+  webAuthMain: { flex: 1, minWidth: 0, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: palette.line, backgroundColor: 'white' },
+  webWelcome: { borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: 27, paddingBottom: 30, backgroundColor: 'white' },
+  webAuthHeader: { backgroundColor: '#fff2bf', paddingBottom: 24 },
+  webAuthForm: { flex: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: 22 },
   yellow: { backgroundColor: '#ffbf13' },
   scroll: { flexGrow: 1, width: '100%', maxWidth: 535, alignSelf: 'center' },
   intro: { flex: 1, minHeight: 390, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 12 },
@@ -524,8 +660,22 @@ function Nav({ icon, label, press }: { icon: React.ComponentProps<typeof Ionicon
   return <Pressable accessibilityRole="button" onPress={press} style={styles.navItem}><Ionicons name={icon} size={21} color="#213347" /><Text style={styles.small}>{label}</Text></Pressable>;
 }
 const styles = StyleSheet.create({
-  webHome: { maxWidth: 1080, paddingHorizontal: 32 },
-  webNav: { width: '100%', maxWidth: 1080, alignSelf: 'center' },
+  authMain: { flex: 1 },
+  webShell: { backgroundColor: palette.canvas },
+  detailStack: { gap: 12, minWidth: 0 },
+  webSplit: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  webPrimary: { flex: 1.65, minWidth: 0, padding: 16, borderRadius: 13, backgroundColor: 'white', borderWidth: 1, borderColor: palette.line },
+  webSecondary: { flex: 1, minWidth: 0, padding: 16, borderRadius: 13, backgroundColor: 'white', borderWidth: 1, borderColor: palette.line },
+  webScroll: { flex: 1, minHeight: 0 },
+  webWide: { maxWidth: 1400, padding: 24, gap: 17 },
+  webPage: { maxWidth: 960, padding: 24, gap: 15 },
+  webHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  webBack: { padding: 8, borderRadius: 9, backgroundColor: '#fff', borderWidth: 1, borderColor: palette.line },
+  webTitle: { fontSize: 27, fontWeight: '900', color: palette.ink, flexShrink: 1 },
+  webGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: '1.5%', rowGap: 13 },
+  webEmpty: { minHeight: 125, padding: 20, gap: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: palette.line, borderRadius: 12, alignItems: 'center' },
+  desktopCover: { height: 280, backgroundColor: '#e8edf4', borderRadius: 12, alignItems: 'center', padding: 22 },
+  desktopCoverTitle: { fontSize: 24, textAlign: 'center' },
   detailCover: { width: '100%', height: 143 },
   detailTitle: { color: '#172a41', fontSize: 24, fontWeight: '800' },
   detailPanel: { borderWidth: 1, borderColor: '#dce5f5', borderRadius: 16, backgroundColor: '#fff', padding: 14, gap: 4 },
