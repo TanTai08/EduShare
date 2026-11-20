@@ -130,6 +130,22 @@ app.get('/documents/saved', async (req, res) => {
   const user = await auth(req);
   res.json(await Promise.all((await models.docs.find({ _id: { $in: user.saved }, status: 'approved' })).map(serializeDoc)));
 });
+app.get('/documents/library', async (req, res) => {
+  const user = await requireStudent(req);
+  const [completed, opened] = await Promise.all([
+    models.deals.distinct('doc', { buyer: user.id, status: 'completed' }),
+    models.opens.aggregate<{ _id: string; latest: Date }>([
+      { $match: { user: user.id, doc: { $type: 'string' } } },
+      { $group: { _id: '$doc', latest: { $max: '$createdAt' } } },
+      { $sort: { latest: -1, _id: 1 } },
+    ]),
+  ]);
+  const saved = user.saved || [];
+  const recent = opened.map(entry => entry._id);
+  const ids = [...new Set([...saved, ...completed, ...recent])].filter(id => typeof id === 'string' && Types.ObjectId.isValid(id));
+  const entries = await models.docs.find({ _id: { $in: ids }, status: 'approved' }).sort({ createdAt: -1 });
+  res.json({ rows: await Promise.all(entries.map(serializeDoc)), saved, acquired: completed, recent });
+});
 app.get('/documents/:id/pdf', async (req, res) => {
   const doc = await models.docs.findOne({ _id: objectId.parse(req.params.id), status: 'approved', type: 'digital' }).select('+pdf');
   if (!doc?.pdf) return fail(404, 'Không tìm thấy tệp PDF.');
@@ -139,7 +155,12 @@ app.get('/documents/:id/pdf', async (req, res) => {
 app.post('/documents/:id/open', async (req, res) => {
   const doc = await models.docs.findOne({ _id: objectId.parse(req.params.id), status: 'approved', type: 'digital' }).select('fileUrl fileName');
   if (!doc || (!doc.fileUrl && !doc.fileName)) return fail(404, 'Không tìm thấy tệp tài liệu.');
-  await models.opens.create({ doc: doc.id });
+  let reader: User | undefined;
+  if (req.get('authorization')) {
+    try { reader = await auth(req); }
+    catch (error) { if (!(error instanceof HttpError && [401, 403].includes(error.status))) throw error; }
+  }
+  await models.opens.create({ doc: doc.id, user: reader?.role === 'student' ? reader.id : undefined });
   res.json({ url: doc.fileUrl, path: doc.fileUrl ? undefined : '/documents/' + doc.id + '/pdf' });
 });
 app.get('/documents/:id', async (req, res) => {

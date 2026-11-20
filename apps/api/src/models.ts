@@ -37,8 +37,8 @@ export const models = {
     expires: { type: Date, expires: 0 },
   })),
   opens: mongoose.model('DocumentOpen', new Schema({
-    doc: String,
-  }, { timestamps: true }).index({ createdAt: 1 })),
+    doc: String, user: String,
+  }, { timestamps: true }).index({ createdAt: 1 }).index({ user: 1, createdAt: -1 })),
   reviews: mongoose.model('Review', new Schema({
     deal: String, from: String, to: String, rating: Number, text: String,
   }, { timestamps: true }).index({ deal: 1, from: 1 }, { unique: true })),
