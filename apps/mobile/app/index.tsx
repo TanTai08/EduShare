@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, BackHandler, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, BackHandler, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +12,13 @@ import { listingLabels, schools, type Listing, type ListingType, type PublicUser
 import { sample } from '../src/sample';
 
 const endpoint = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000');
-type User = PublicUser & { points: number; saved: string[]; role?: string };
+type User = PublicUser & { points: number; saved: string[]; role: 'student' | 'admin' };
+function validateSessionUser(user: User) {
+  if (user.role !== 'student' && user.role !== 'admin') {
+    throw new Error('API chưa trả về vai trò tài khoản. Cập nhật mã nguồn và khởi động lại API EduShare.');
+  }
+  return user;
+}
 type AdminUser = { id: string; name: string; email: string; school?: string; role: string };
 type AdminReport = { id: string; title: string; reason: string; description: string; image?: string };
 type AdminTab = 'posts' | 'users' | 'reports';
@@ -40,6 +46,8 @@ function Cover({ doc, wide = false, hero = false }: { doc: Listing; wide?: boole
   return doc.cover ? <Image source={{ uri: doc.cover }} style={[styles.cover, wide && styles.wideCover, hero && styles.detailCover]} /> : <View style={[styles.cover, wide && styles.wideCover, hero && styles.detailCover, { backgroundColor: doc.type === 'sale' ? '#234569' : doc.type === 'points' ? '#355D53' : '#554579' }]}><Ionicons name="book-outline" color="#ffdc55" size={24} /><Text style={styles.coverTitle} numberOfLines={3}>{doc.title}</Text></View>;
 }
 export default function EduShare() {
+  const { width } = useWindowDimensions();
+  const desktop = Platform.OS === 'web' && width >= 900;
   const [page, go] = useState<Page>('welcome');
   const history = useRef<Page[]>([]);
   const afterLogin = useRef<Page>('home');
@@ -129,7 +137,7 @@ export default function EduShare() {
     void AsyncStorage.getItem('edushare-session').then(async session => {
       if (!session) return;
       try {
-        const user = await api<User>('/me', 'GET', undefined, session);
+        const user = validateSessionUser(await api<User>('/me', 'GET', undefined, session));
         setMe(user); setToken(session); setRegion(user.region); go('home');
       } catch { /* Keep the welcome screen available offline. */ }
     }).catch(() => {});
@@ -155,6 +163,7 @@ export default function EduShare() {
     if (page === 'register' && password !== confirmation) throw new Error('Mật khẩu xác nhận chưa khớp.');
     const response = await api<{ token: string; user: User }>(page === 'register' ? '/auth/register' : '/auth/login', 'POST',
       page === 'register' ? { name, email, password, schoolId } : { email, password });
+    validateSessionUser(response.user);
     await AsyncStorage.setItem('edushare-session', response.token);
     setMe(response.user); setToken(response.token); setRegion(response.user.region); setPassword(''); setConfirmation('');
     const destination = afterLogin.current;
@@ -225,13 +234,19 @@ export default function EduShare() {
   function toggleFilter(value: ListingType) { setQ(''); setFilter(current => current === value ? '' : value); }
   const matches = items.filter(item => [item.title, item.subject, item.category, item.owner?.school || ''].some(v => v.toLowerCase().includes(q.toLowerCase())));
   if (me?.role === 'admin') return <SafeAreaView style={styles.shell}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-      <View style={styles.accountHero}><Ionicons name="shield-checkmark-outline" size={34} color="#203448" /><Text style={styles.detailTitle}>Quản trị EduShare</Text><Text style={styles.small}>{me.name}</Text></View>
-      <View style={styles.wrap}>
-        <Button caption="Duyệt bài" alt={adminTab !== 'posts'} onPress={() => void run(() => loadAdmin('posts'))} />
-        <Button caption="Người dùng" alt={adminTab !== 'users'} onPress={() => void run(() => loadAdmin('users'))} />
-        <Button caption="Báo cáo" alt={adminTab !== 'reports'} onPress={() => void run(() => loadAdmin('reports'))} />
+    <View style={[styles.adminLayout, desktop && styles.adminDesktop]}>
+      <View style={[styles.adminMenu, desktop && styles.adminSidebar]}>
+        <View style={styles.row}><Ionicons name="shield-checkmark-outline" size={26} color="#203448" /><Text style={styles.detailTitle}>Quản trị EduShare</Text></View>
+        <Text style={styles.small}>{me.name} · Quản trị viên</Text>
+        <View style={desktop ? styles.adminLinks : styles.wrap}>
+          <Button caption="Duyệt bài" alt={adminTab !== 'posts'} onPress={() => void run(() => loadAdmin('posts'))} />
+          <Button caption="Người dùng" alt={adminTab !== 'users'} onPress={() => void run(() => loadAdmin('users'))} />
+          <Button caption="Báo cáo" alt={adminTab !== 'reports'} onPress={() => void run(() => loadAdmin('reports'))} />
+          <Button caption="Đăng xuất" onPress={logout} alt />
+        </View>
       </View>
+      <ScrollView style={styles.flex} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, desktop && styles.adminContent]}>
+        <Text accessibilityRole="header" style={styles.detailTitle}>{adminTab === 'posts' ? 'Bài chờ duyệt' : adminTab === 'users' ? 'Danh sách người dùng' : 'Báo cáo chờ xử lý'}</Text>
       {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
       {busy && <ActivityIndicator color="#9d6a00" />}
       {adminTab === 'posts' && (list.length ? list.map(item => <View key={item.id} style={styles.panel}>
@@ -251,8 +266,8 @@ export default function EduShare() {
         {!!report.image && <Image accessibilityLabel="Ảnh minh chứng" source={{ uri: report.image }} style={styles.picture} />}
         <Button caption="Đánh dấu đã xử lý" alt onPress={() => void run(async () => { await api('/admin/reports/' + report.id + '/resolve', 'POST'); await loadAdmin('reports'); })} />
       </View>) : !busy && <Text>Không có báo cáo chờ xử lý.</Text>)}
-      <Button caption="Đăng xuất" onPress={logout} alt />
-    </ScrollView>
+      </ScrollView>
+    </View>
   </SafeAreaView>;
   if (page === 'welcome' || page === 'login' || page === 'register') {
     const welcome = page === 'welcome';
@@ -305,7 +320,7 @@ export default function EduShare() {
   }
   const heading: Partial<Record<Page, string>> = { login: 'Đăng nhập', register: 'Đăng ký', detail: 'Chi tiết tài liệu', publish: 'Đăng tài liệu', preview: 'Xem trước bài đăng', posted: 'Đã gửi duyệt', account: 'Hồ sơ của tôi', saved: 'Tài liệu đã lưu', mine: 'Bài đăng của tôi', deals: 'Lịch sử giao dịch', appointment: 'Đặt lịch nhận', wallet: 'Ví điểm', inbox: 'Tin nhắn', chat: peer.name, profile: 'Hồ sơ công khai', assistant: 'Trợ lý AI', report: 'Báo cáo tài liệu', edit: 'Chỉnh sửa hồ sơ', review: 'Đánh giá giao dịch', region: 'Khu vực giao dịch', notifications: 'Thông báo', dealProgress: 'Tiến trình giao dịch', pdfOpened: 'Tài liệu PDF', reportSent: 'Đã gửi báo cáo' };
   return <SafeAreaView style={styles.shell}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, desktop && page === 'home' && styles.webHome]}>
       {heading[page] && <Pressable accessibilityRole="button" onPress={() => { if (!back()) open('home'); }} style={styles.row}><Ionicons name="arrow-back" size={22} /><Text style={styles.heading}>{heading[page]}</Text></Pressable>}
       {!!notice && <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text>}
       {busy && <Text style={styles.small}>Đang xử lý…</Text>}
@@ -484,7 +499,7 @@ export default function EduShare() {
         <Button caption="Về chi tiết tài liệu" onPress={() => { history.current.pop(); if (!back()) open('detail'); }} />
       </>}
     </ScrollView>
-    {['home', 'account', 'inbox', 'saved'].includes(page) && <View style={styles.nav}>
+    {['home', 'account', 'inbox', 'saved'].includes(page) && <View style={[styles.nav, desktop && styles.webNav]}>
       <Nav icon="home-outline" label="Trang chủ" press={() => open('home')} />
       <Nav icon="bookmark-outline" label="Thư viện" press={() => me ? loadList('/documents/saved', 'saved') : open('login')} />
       <Nav icon="add-circle" label="Đăng" press={() => { setForm(blank); setAiFields([]); setEditing(''); setType('digital'); secured('publish'); }} />
@@ -548,6 +563,14 @@ function Nav({ icon, label, press }: { icon: React.ComponentProps<typeof Ionicon
   return <Pressable accessibilityRole="button" onPress={press} style={styles.navItem}><Ionicons name={icon} size={21} color="#213347" /><Text style={styles.small}>{label}</Text></Pressable>;
 }
 const styles = StyleSheet.create({
+  adminLayout: { flex: 1 },
+  adminDesktop: { flexDirection: 'row' },
+  adminMenu: { backgroundColor: '#fff', padding: 20, gap: 12, borderBottomWidth: 1, borderColor: '#e4e8ed' },
+  adminSidebar: { width: 270, borderRightWidth: 1, borderBottomWidth: 0, paddingTop: 32 },
+  adminLinks: { marginTop: 12, gap: 10 },
+  adminContent: { maxWidth: 1120, padding: 32 },
+  webHome: { maxWidth: 1080, paddingHorizontal: 32 },
+  webNav: { width: '100%', maxWidth: 1080, alignSelf: 'center' },
   detailCover: { width: '100%', height: 143 },
   detailTitle: { color: '#172a41', fontSize: 24, fontWeight: '800' },
   detailPanel: { borderWidth: 1, borderColor: '#dce5f5', borderRadius: 16, backgroundColor: '#fff', padding: 14, gap: 4 },
