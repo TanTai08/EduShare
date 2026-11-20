@@ -6,7 +6,7 @@ import { styles } from '../../styles';
 import { WebButton } from '../../Workspace';
 import { money, price, status, type Deal, type User } from '../../models';
 import { AppointmentPicker } from './AppointmentPicker';
-import type { Appointment } from './appointment';
+import type { Appointment } from '../../../../../../packages/contracts/appointment';
 
 export function DealsScreen({ page, desktop, doc, listingCard, place, setPlace, appointment, setAppointment, onBook, dealFilter, setDealFilter, visibleDeals, deals,
   selectedDeal, onSelectDeal, showPeer, startChat, me, act, onReview, rating, setRating, message, setMessage, onReviewSubmit }: {

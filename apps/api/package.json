@@ -6,7 +6,7 @@
     "dev": "tsx --env-file-if-exists=.env src/server.ts",
     "check": "tsc --noEmit",
     "seed:demo": "tsx --env-file-if-exists=.env src/seed.ts",
-    "test": "tsx --test test/app.test.ts test/catalog.test.ts test/documents.test.ts",
+    "test": "tsx --test test/app.test.ts test/catalog.test.ts test/deals.test.ts test/documents.test.ts",
     "catalog:sync": "tsx --env-file-if-exists=.env src/modules/academic/sync.ts"
   },
   "dependencies": {

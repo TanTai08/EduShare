@@ -15,7 +15,7 @@ import { blank,emptyLibrary,price,searchable,status,type AiTurn,type LibraryData
 import { emptyEducation, type EducationDraft } from './features/academic/EducationFields';
 import { AccountScreen } from './features/account/AccountScreen';
 import { DealsScreen } from './features/deals/DealsScreen';
-import { formatAppointment, type Appointment } from './features/deals/appointment';
+import { appointmentTimestamp, formatAppointment, pastAppointmentMessage, type Appointment } from '../../../../packages/contracts/appointment';
 import { AuthScreen } from './features/auth/AuthScreen';
 import { MobileHome } from './features/catalog/MobileHome';
 import { DocumentScreen } from './features/documents/DocumentScreen';
@@ -410,6 +410,7 @@ export default function EduShare() {
         onBook={() => void run(async () => {
           if (!place.trim()) throw new Error('Vui lòng nhập điểm hẹn.');
           if (!appointment) throw new Error('Vui lòng chọn ngày và giờ hẹn.');
+          if (appointmentTimestamp(appointment) <= Date.now()) throw new Error(pastAppointmentMessage);
           const created = await api<Deal>('/deals', 'POST', { doc: doc.id, location: place.trim(), time: formatAppointment(appointment) });
           setSelectedDeal(created._id);
           setDeals(current => [{ ...created, document: { title: doc.title, cover: doc.cover }, counterparty: doc.owner }, ...current]);

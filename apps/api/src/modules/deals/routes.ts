@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { models } from '../../models.js';
 import { auth, checkParticipation, requireStudent } from '../../middlewares/auth.js';
-import { objectId, text } from '../../validation.js';
+import { objectId } from '../../validation.js';
 import { createDeal, updateDeal } from './service.js';
+import { dealInput } from './validation.js';
 import { publicUser } from '../users/profile.js';
 
 const router = Router();
@@ -11,7 +12,7 @@ const router = Router();
 router.post('/deals', async (req, res) => {
   const user = await requireStudent(req);
   checkParticipation(user);
-  const input = z.object({ doc: objectId, location: text(160), time: text(80) }).parse(req.body);
+  const input = dealInput.parse(req.body);
   const deal = await createDeal(user, input);
   res.status(201).json(deal);
 });

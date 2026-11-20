@@ -1,9 +1,13 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../ui';
 import { styles } from '../../styles';
-import { defaultAppointment, formatAppointment, monthDays, shiftMonth, twoDigits, type Appointment, type CalendarMonth } from './appointment';
+import {
+  appointmentAt, appointmentTimestamp, formatAppointment, minuteMs, nextAppointment, pastAppointmentMessage,
+  twoDigits, type Appointment,
+} from '../../../../../../packages/contracts/appointment';
+import { monthDays, shiftMonth, type CalendarMonth } from './appointment';
 
 const week = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const hours = Array.from({ length: 24 }, (_, index) => index);
@@ -11,17 +15,66 @@ const minutes = Array.from({ length: 60 }, (_, index) => index);
 
 export function AppointmentPicker({ value, onChange }: { value: Appointment | null; onChange: (value: Appointment) => void }) {
   const [draft, setDraft] = useState<Appointment | null>(null);
-  const [month, setMonth] = useState<CalendarMonth>(defaultAppointment);
+  const [month, setMonth] = useState<CalendarMonth>(() => appointmentAt(Date.now()));
+  const [clock, setClock] = useState(Date.now);
+  const isOpen = draft !== null;
+  const today = appointmentAt(clock);
+  const canGoBack = month.year * 12 + month.month > today.year * 12 + today.month;
+  const expired = draft !== null && appointmentTimestamp(draft) <= clock;
   const close = () => setDraft(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setInterval(() => setClock(current => {
+      const now = Date.now();
+      return Math.floor(now / minuteMs) === Math.floor(current / minuteMs) ? current : now;
+    }), 1000);
+    return () => clearInterval(timer);
+  }, [isOpen]);
+
   function open() {
-    const initial = value ?? defaultAppointment();
+    const now = Date.now();
+    const initial = value && appointmentTimestamp(value) > now ? value : nextAppointment(now);
+    setClock(now);
     setMonth({ year: initial.year, month: initial.month });
     setDraft(initial);
   }
 
   function selectDay(day: number) {
-    setDraft(current => current && { ...current, ...month, day });
+    if (!draft) return;
+    const now = Date.now();
+    const date = { ...draft, ...month, day };
+    setClock(now);
+    if (appointmentTimestamp({ ...date, hour: 23, minute: 59 }) <= now) return;
+    setDraft(appointmentTimestamp(date) > now ? date : nextAppointment(now));
+  }
+
+  function selectHour(hour: number) {
+    if (!draft) return;
+    const now = Date.now();
+    const time = { ...draft, hour };
+    setClock(now);
+    if (appointmentTimestamp({ ...time, minute: 59 }) <= now) return;
+    setDraft(appointmentTimestamp(time) > now ? time : nextAppointment(now));
+  }
+
+  function selectMinute(minute: number) {
+    if (!draft) return;
+    const now = Date.now();
+    const time = { ...draft, minute };
+    setClock(now);
+    if (appointmentTimestamp(time) > now) setDraft(time);
+  }
+
+  function confirm() {
+    if (!draft) return;
+    const now = Date.now();
+    if (appointmentTimestamp(draft) <= now) {
+      setClock(now);
+      return;
+    }
+    onChange(draft);
+    close();
   }
 
   return <>
@@ -46,7 +99,8 @@ export function AppointmentPicker({ value, onChange }: { value: Appointment | nu
             </View>
             <View style={s.monthHeader}>
               <Pressable accessibilityRole="button" accessibilityLabel="Tháng trước"
-                onPress={() => setMonth(current => shiftMonth(current, -1))} style={s.iconButton}>
+                disabled={!canGoBack} onPress={() => setMonth(current => shiftMonth(current, -1))}
+                style={[s.iconButton, !canGoBack && s.disabled]}>
                 <Ionicons name="chevron-back" size={20} color="#203448" />
               </Pressable>
               <Text accessibilityLiveRegion="polite" style={styles.bold}>Tháng {month.month + 1}/{month.year}</Text>
@@ -59,10 +113,12 @@ export function AppointmentPicker({ value, onChange }: { value: Appointment | nu
               {week.map(label => <View key={label} style={s.cell}><Text style={styles.small}>{label}</Text></View>)}
               {monthDays(month).map((day, index) => {
                 if (day === null) return <View key={'empty-' + index} style={s.cell} />;
-                const selected = day === draft.day && month.month === draft.month && month.year === draft.year;
+                const disabled = appointmentTimestamp({ ...month, day, hour: 23, minute: 59 }) <= clock;
+                const selected = !disabled && day === draft.day && month.month === draft.month && month.year === draft.year;
                 return <View key={day} style={s.cell}>
                   <Pressable accessibilityRole="button" accessibilityLabel={day + '/' + (month.month + 1) + '/' + month.year}
-                    accessibilityState={{ selected }} onPress={() => selectDay(day)} style={[s.day, selected && s.selected]}>
+                    accessibilityState={{ selected, disabled }} disabled={disabled} onPress={() => selectDay(day)}
+                    style={[s.day, selected && s.selected, disabled && s.disabled]}>
                     <Text style={styles.bold}>{day}</Text>
                   </Pressable>
                 </View>;
@@ -70,12 +126,13 @@ export function AppointmentPicker({ value, onChange }: { value: Appointment | nu
             </View>
             <View style={s.timeRow}>
               <TimeOptions label="Giờ" options={hours} value={draft.hour}
-                onChange={hour => setDraft(current => current && { ...current, hour })} />
+                disabled={hour => appointmentTimestamp({ ...draft, hour, minute: 59 }) <= clock} onChange={selectHour} />
               <TimeOptions label="Phút" options={minutes} value={draft.minute}
-                onChange={minute => setDraft(current => current && { ...current, minute })} />
+                disabled={minute => appointmentTimestamp({ ...draft, minute }) <= clock} onChange={selectMinute} />
             </View>
             <Text accessibilityLiveRegion="polite" style={s.summary}>{formatAppointment(draft)} (giờ Việt Nam)</Text>
-            <Button caption="Xác nhận ngày giờ" onPress={() => { onChange(draft); close(); }} />
+            {expired && <Text accessibilityRole="alert" style={styles.notice}>{pastAppointmentMessage}</Text>}
+            <Button caption="Xác nhận ngày giờ" disabled={expired} onPress={confirm} />
           </ScrollView>
         </View>
       </View>
@@ -83,8 +140,8 @@ export function AppointmentPicker({ value, onChange }: { value: Appointment | nu
   </>;
 }
 
-function TimeOptions({ label, options, value, onChange }: {
-  label: string; options: number[]; value: number; onChange: (value: number) => void;
+function TimeOptions({ label, options, value, disabled, onChange }: {
+  label: string; options: number[]; value: number; disabled: (value: number) => boolean; onChange: (value: number) => void;
 }) {
   const scroll = useRef<ScrollView>(null);
   const initialRow = useRef(Math.floor(value / 3));
@@ -92,13 +149,17 @@ function TimeOptions({ label, options, value, onChange }: {
     <Text style={styles.small}>{label} · {twoDigits(value)}</Text>
     <ScrollView ref={scroll} nestedScrollEnabled style={s.timeOptions} contentContainerStyle={s.grid}
       onLayout={() => scroll.current?.scrollTo({ y: Math.max(0, initialRow.current - 1) * 36, animated: false })}>
-      {options.map(number => <View key={number} style={s.timeCell}>
-        <Pressable accessibilityRole="button" accessibilityLabel={label + ' ' + twoDigits(number)}
-          accessibilityState={{ selected: value === number }} onPress={() => onChange(number)}
-          style={[s.timeButton, value === number && s.selected]}>
-          <Text style={styles.bold}>{twoDigits(number)}</Text>
-        </Pressable>
-      </View>)}
+      {options.map(number => {
+        const unavailable = disabled(number);
+        const selected = !unavailable && value === number;
+        return <View key={number} style={s.timeCell}>
+          <Pressable accessibilityRole="button" accessibilityLabel={label + ' ' + twoDigits(number)}
+            accessibilityState={{ selected, disabled: unavailable }} disabled={unavailable} onPress={() => onChange(number)}
+            style={[s.timeButton, selected && s.selected, unavailable && s.disabled]}>
+            <Text style={styles.bold}>{twoDigits(number)}</Text>
+          </Pressable>
+        </View>;
+      })}
     </ScrollView>
   </View>;
 }
@@ -116,6 +177,7 @@ const s = StyleSheet.create({
   cell: { width: '14.28%', minHeight: 32, alignItems: 'center', justifyContent: 'center' },
   day: { width: '94%', minHeight: 36, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   selected: { backgroundColor: '#ffcd16' },
+  disabled: { opacity: 0.35 },
   timeRow: { flexDirection: 'row', gap: 10 },
   timeOptions: { marginTop: 6, height: 108, flexGrow: 0 },
   timeCell: { width: '33.33%', padding: 2 },

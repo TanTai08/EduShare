@@ -4,9 +4,9 @@ import type { Listing, PublicUser } from '../../../../packages/contracts';
 import { LabeledField, TextButton } from '../components/FormControls';
 import { styles } from './styles';
 
-export function Button({ caption, onPress, alt = false, fill = false }: { caption: string; onPress: () => void; alt?: boolean; fill?: boolean }) {
-  return <TextButton label={caption} labelStyle={styles.bold} onPress={onPress}
-    style={[styles.button, alt && styles.alt, fill && styles.flex]} />;
+export function Button({ caption, onPress, alt = false, fill = false, disabled = false }: { caption: string; onPress: () => void; alt?: boolean; fill?: boolean; disabled?: boolean }) {
+  return <TextButton label={caption} labelStyle={styles.bold} onPress={onPress} disabled={disabled}
+    style={[styles.button, alt && styles.alt, fill && styles.flex, disabled && { opacity: 0.48 }]} />;
 }
 export function Field({ label, value, change, secret = false, error, multiline, maxLength }: {
   label: string; value: string; change: (s: string) => void; secret?: boolean; error?: string;
